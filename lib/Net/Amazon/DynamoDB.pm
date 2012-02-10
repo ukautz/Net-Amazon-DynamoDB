@@ -620,7 +620,7 @@ sub scan_items {
     }
     
     # perform query
-    my ( $res, $res_ok, $json_ref ) = $self->request( Query => \%query );
+    my ( $res, $res_ok, $json_ref ) = $self->request( Scan => \%query );
     
     use Data::Dumper; die Dumper( \%query, $json_ref );
 }
