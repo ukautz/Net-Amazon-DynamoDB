@@ -555,14 +555,15 @@ sub scan_items {
     
     # build put
     my %query = (
-        TableName        => $table,
+        TableName => $table,
+        ScanFilter => {},
         ( defined $args_ref->{ limit } ? ( Limit => $args_ref->{ limit } ) : () ),
     );
     
     # using filter
     if ( $filter_ref && keys %$filter_ref ) {
         my @filter_keys = $self->_check_keys( "scan_items: filter keys", $table, $filter_ref );
-        my $s_ref = $query{ ScanFilter } = {};
+        my $s_ref = $query{ ScanFilter };
         foreach my $key( @filter_keys ) {
             my $type = $self->_attrib_type( $table, $key );
             my $val_ref = $filter_ref->{ $key };

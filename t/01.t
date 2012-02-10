@@ -60,8 +60,10 @@ SKIP: {
     #     attrib2  => 'Irgend was anderes '. time()
     # }, undef, 1 ) for 1..5;
     #sleep 5;
-    #$ddb->describe_table( 'othertable' );
-    $ddb->scan_items( 'sometable', { id => 1 }, { limit => 10 } );
+    $ddb->describe_table( 'othertable' );
+    #$ddb->scan_items( 'othertable', { id => 1 }, { limit => 10 } );
+    #$ddb->scan_items( 'othertable', { id => 1, range_id => 2 }, { limit => 10 } );
+    #$ddb->scan_items( 'othertable' );
     #$ddb->query_items( 'othertable', { id => 1, range_id => 2 }, { limit => 10 } );
     # my $start = time();
     # foreach my $i( 1..100 ) {
