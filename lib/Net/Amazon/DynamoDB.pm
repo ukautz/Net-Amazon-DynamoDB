@@ -63,14 +63,14 @@ use Moose;
 use v5.10;
 use version 0.74; our $VERSION = qv( "v0.1.0" );
 
-use LWP::UserAgent;
+use DateTime::Format::HTTP;
+use DateTime;
+use Digest::SHA qw/ sha256 hmac_sha256_base64 /;
 use HTTP::Request;
 use JSON;
+use LWP::UserAgent;
 use Net::Amazon::AWSSign;
-use DateTime;
-use DateTime::Format::HTTP;
 use XML::Simple qw/ XMLin /;
-use Digest::SHA qw/ sha256 hmac_sha256_base64 /;
 
 =head1 CLASS ATTRIBUTES
 
@@ -471,7 +471,7 @@ sub put_item {
     my $table_ref = $self->_check_table( "put_item", $table );
     
     # check primary keys
-    die "put_item: Missing value for Hash Key '$table_ref->{ hash_key }'"
+    die "put_item: Missing value for hash key '$table_ref->{ hash_key }'"
         unless defined $item_ref->{ $table_ref->{ hash_key } }
         && length( $item_ref->{ $table_ref->{ hash_key } } );
     
@@ -585,16 +585,16 @@ Filter
 =cut
 
 sub update_item {
-    my ( $self, $table, $update_ref, $where_ref, $return_old ) = @_;
+    my ( $self, $table, $update_ref, $where_ref, $return_mode ) = @_;
     
     # check definition
     my $table_ref = $self->_check_table( "put_item", $table );
     
     # check primary keys
-    die "update_item: Missing value for Hash Key '$table_ref->{ hash_key }'"
+    die "update_item: Missing value for hash key '$table_ref->{ hash_key }'"
         unless defined $where_ref->{ $table_ref->{ hash_key } }
         && length( $where_ref->{ $table_ref->{ hash_key } } );
-    die "update_item: Missing value for Hash Key '$table_ref->{ hash_key }'"
+    die "update_item: Missing value for range key '$table_ref->{ hash_key }'"
         if defined $table_ref->{ range_key } && !(
             defined $where_ref->{ $table_ref->{ range_key } }
             && length( $where_ref->{ $table_ref->{ range_key } } )
@@ -602,6 +602,10 @@ sub update_item {
     
     # check other attributes
     $self->_check_keys( "put_item: item values", $table, $update_ref );
+    die "update_item: Cannot update hash key '$table_ref->{ hash_key }'. You have to delete and put the item!"
+        if defined $update_ref->{ $table_ref->{ hash_key } };
+    die "update_item: Cannot update range key '$table_ref->{ hash_key }'. You have to delete and put the item!"
+        if defined $table_ref->{ range_key } && defined $update_ref->{ $table_ref->{ range_key } };
     
     # having where -> check now
     $self->_check_keys( "put_item: where clause", $table, $where_ref );
@@ -666,15 +670,19 @@ sub update_item {
     }
     
     # add return value, if set
-    $update{ ReturnValues } = 'ALL_OLD' if $return_old;
+    if ( $return_mode ) {
+        $update{ ReturnValues } = "$return_mode" =~ /^(?:ALL_OLD|UPDATED_OLD|ALL_NEW|UPDATED_NEW)$/i
+            ? uc( $return_mode )
+            : "ALL_OLD";
+    }
     
     # perform create
     my ( $res, $res_ok, $json_ref ) = $self->request( UpdateItem => \%update );
-    use Data::Dumper; die Dumper( [ $json_ref ] );
+    #use Data::Dumper; die Dumper( [ $json_ref ] );
     
     # get result
     if ( $res_ok ) {
-        if ( $return_old ) {
+        if ( $return_mode ) {
             return defined $json_ref->{ Attributes }
                 ? $self->_format_item( $table, $json_ref->{ Attributes } )
                 : undef;
@@ -717,13 +725,13 @@ sub get_item {
         consistent => undef,
         attributes => undef
     };
-    $args_ref->{ consistent } //= $self->always_consistent;
+    $args_ref->{ consistent } //= $self->read_consistent;
     
     # check definition
     my $table_ref = $self->_check_table( "get_item", $table );
     
     # check primary keys
-    die "get_item: Missing value for Hash Key '$table_ref->{ hash_key }'"
+    die "get_item: Missing value for hash key '$table_ref->{ hash_key }'"
         unless defined $pk_ref->{ $table_ref->{ hash_key } }
         && length( $pk_ref->{ $table_ref->{ hash_key } } );
     die "get_item: Missing value for Range Key '$table_ref->{ range_key }'"
@@ -757,7 +765,10 @@ sub get_item {
     my ( $res, $res_ok, $json_ref ) = $self->request( GetItem => \%get );
     
     # return on success
-    return $json_ref->{ Item } if $res_ok && defined $json_ref->{ Item };
+    return $self->_format_item( $table, $json_ref->{ Item } ) if $res_ok && defined $json_ref->{ Item };
+    
+    # return on success, but nothing received
+    return undef if $res_ok;
     
     # set error
     $self->error( 'get_item failed: '. ( $res ? $res->decoded_content : 'No Result' ) );
@@ -889,7 +900,7 @@ sub delete_item {
     my $table_ref = $self->_check_table( "delete_item", $table );
     
     # check primary keys
-    die "delete_item: Missing value for Hash Key '$table_ref->{ hash_key }'"
+    die "delete_item: Missing value for hash key '$table_ref->{ hash_key }'"
         unless defined $where_ref->{ $table_ref->{ hash_key } }
         && length( $where_ref->{ $table_ref->{ hash_key } } );
     die "delete_item: Missing value for Range Key '$table_ref->{ range_key }'"
@@ -1079,12 +1090,15 @@ sub query_items {
     
     # using filter
     my %filter = %$filter_ref;
-    die "query_items: Missing hash key value in filter-clause"
-        unless defined $filter{ $table_ref->{ hash_key } };
-    $query{ HashKeyValue } = {
-        $self->_attrib_type( $table, $table_ref->{ hash_key } ) =>
-            ( delete $filter{ $table_ref->{ hash_key } } ) . ''
-    };
+    
+    if ( defined $filter{ $table_ref->{ hash_key } } ) {
+        die "query_items: Missing hash key value in filter-clause"
+            unless defined $filter{ $table_ref->{ hash_key } };
+        $query{ HashKeyValue } = {
+            $self->_attrib_type( $table, $table_ref->{ hash_key } ) =>
+                ( delete $filter{ $table_ref->{ hash_key } } ) . ''
+        };
+    }
     
     # adding range to filter
     if ( defined $table_ref->{ range_key }) {
@@ -1318,7 +1332,7 @@ sub request {
     
     # run request
     my $response = $self->lwp->request( $request );
-    use Data::Dumper; print Dumper( $response );
+    #use Data::Dumper; print Dumper( $response );
     
     # get json
     my $json_ref = $response

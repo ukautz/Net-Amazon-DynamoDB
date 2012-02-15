@@ -17,19 +17,23 @@ SKIP: {
     
     subtest( 'Online Tests' => sub {
         
+        my $table_prefix = $ENV{ AWS_TEST_TABLE_PREFIX } || 'test_';
+        my $table1 = $table_prefix. 'table1';
+        my $table2 = $table_prefix. 'table2';
+        
         # create ddb
         my $ddb = eval { Net::Amazon::DynamoDB->new(
             access_key => $ENV{ AWS_ACCESS_KEY_ID },
             secret_key => $ENV{ AWS_SECRET_ACCESS_KEY },
             tables     => {
-                'sometable' => {
+                $table1 => {
                     hash_key => 'id',
                     attributes  => {
                         id => 'N',
                         name => 'S'
                     }
                 },
-                'othertable' => {
+                $table2 => {
                     hash_key => 'id',
                     range_key => 'range_id',
                     attributes  => {
@@ -41,65 +45,95 @@ SKIP: {
                 }
             }
         ) };
-        if ( $@ ) {
-            # <<< HERE
+        BAIL_OUT( "Failed to instantiate Net::Amazon::DynamoDB: $@" ) if $@;
+        
+        # create tables
+        foreach my $table( $table1, $table2 ) {
+            if ( $ddb->exists_table( $table ) ) {
+                pass( "Table $table already exists" );
+                next;
+            }
+            my $create_ref = $ddb->create_table( $table, 10, 5 );
+            ok( $create_ref && ( $create_ref->{ status } eq 'ACTIVE' || $create_ref->{ status } eq 'CREATING' ), "Create response for $table" );
+            
+            subtest( "Waiting for $table being created", sub {
+                if ( $create_ref->{ status } eq 'ACTIVE' ) {
+                    plan skip_all => "Table $table already created";
+                    return;
+                }
+                plan tests => 1;
+                foreach my $num( 1..60 ) {
+                    my $desc_ref = $ddb->describe_table( $table );
+                    if ( $desc_ref && $desc_ref->{ status } eq 'ACTIVE' ) {
+                        pass( "Table $table has been created" );
+                        last;
+                    }
+                    sleep 1;
+                }
+            } );
         }
         
-        # $ddb->exists_table( $_ ) || $ddb->create_table( $_, 10, 5 )
-        #     for qw/ sometable othertable /;
-        #print Dumper( { TABLES => $ddb->list_tables() } );
+        # put test
+        ok( $ddb->put_item( $table1 => { id => 1, name => "First entry" } ), "First entry in $table1 created" );
         
-        #$ddb->update_table( sometable => 10, 6 );
-        $ddb->describe_table( 'sometable' );
+        # read test
+        my $read_ref = $ddb->get_item( $table1 => { id => 1 } );
+        ok( $read_ref && $read_ref->{ id } == 1 && $read_ref->{ name } eq 'First entry', "First entry from $table1 read" );
         
-        # $ddb->put_item( 'sometable' => {
-        #     id   => 3,
-        #     name => 'test was anderes '. localtime()
-        # } );
-        #$ddb->exists_table( 'sometable' );
+        # update test
+        my $update_ref = $ddb->update_item( $table1 => { name => "Updated first entry" }, { id => 1 }, 'ALL_NEW' );
+        ok( $update_ref && $update_ref->{ name } eq 'Updated first entry', "Update in $table1 ok" );
         
-        # $ddb->create_table( 'sometable' => 10, 5 )
-        #     unless $ddb->exists_table( 'sometable' );
-        # $ddb->describe_table( 'sometable' );
+        # create multiple in table1
+        foreach my $num( 2..10 ) {
+            $ddb->put_item( $table1 => { id => $num, name => "${num}. entry" } )
+        }
         
-        # $ddb->delete_table( 'sometable' );
-        #$ddb->create_table( 'sometable' => 10, 5 );
-        # print Dumper( { ITEM => $ddb->put_item( 'sometable' => {
-        #     id       => $_,
-        #     name     => "Item $_"
-        #     # range_id => $_ * 2,
-        #     # attrib1  => 'test was anderes '. localtime(),
-        #     # attrib2  => 'Irgend was anderes '. time()
-        # }, { id => 1 }, 1 ) } ) for 1..1;
-        #sleep 5;
-        #$ddb->describe_table( 'othertable' );
-        #print Dumper( { r => [ $ddb->scan_items( 'sometable', { id => 1 }, { limit => 10 } ) ] } );
-        #print Dumper( { r => [ $ddb->update_item( 'sometable', { name => 'Bla Bla Blub' }, { id => 1, name => 'asdasd' }, 1 ) ] } );
-        #$ddb->scan_items( 'othertable', { id => 1, range_id => 2 }, { limit => 10 } );
-        #$ddb->scan_items( 'othertable', undef, { count => 1, limit => 2 } );
-        # print Dumper( { R => [ $ddb->batch_get_item( {
-        #     sometable => [
-        #         { id => 1 },
-        #         { id => 2 },
-        #         { id => 3 },
-        #     ],
-        #     othertable => [
-        #         { id => 1, range_id => 2 },
-        #         { id => 2, range_id => 4 },
-        #         { id => 3, range_id => 6 },
-        #     ]
-        # } ) ] } );
-        #$ddb->delete_item( 'sometable', { id => 1 } );
-        #$ddb->query_items( 'othertable', { id => 1, range_id => 2 }, { limit => 10 } );
-        # my $start = time();
-        # foreach my $i( 1..100 ) {
-        #     $ddb->get_item( 'othertable', { id => 1, range_id => $i * 2 } );
-        # }
-        # my $end = time();
-        # print "TOOK ". ( $end - $start ). "sec -> ". sprintf( '%0.2f', 100 / ( ( $end - $start ) || 1 ) ). "r/sec\n";
+        # scan search in table1
+        my $search_ref = $ddb->scan_items( $table1 );
+        ok( $search_ref && scalar( @$search_ref ) == 10, "Scanned for 10 items in $table1" );
+        print Dumper( $search_ref );
         
-        #print Dumper( { r => [ $ddb->delete_table( 'sometable' ) ] } );
-        #print Dumper( { r => [ $ddb->describe_table( 'othertable' ) ] } );
-        print "ERR ". $ddb->error(). "\n";
+        # create multiple in table2 in range table and search there
+        foreach my $num( 1..10 ) {
+            $ddb->put_item( $table2 => {
+                id       => ( $num % 2 )+ 1,
+                range_id => $num,
+                attrib1  => "The time string ". localtime(),
+                attrib2  => "The time unix ". time()
+            } );
+        }
+        my $query_ref = $ddb->query_items( $table2 => { id => 1, range_id => { GT => 5 } } );
+        ok( $query_ref && scalar( @$query_ref ) == 3, "Query for 3 items in $table2" );
+        
+        # batch get multuiple
+        my $batch_ref = $ddb->batch_get_item( {
+            $table1 => [
+                { id => 1 },
+                { id => 10 }
+            ],
+            $table2 => [
+                { id => 2, range_id => 1 },
+                { id => 1, range_id => 2 },
+            ]
+        } );
+        print Dumper( $batch_ref );
+        ok(
+            defined $batch_ref->{ $table1 } && scalar( @{ $batch_ref->{ $table1 } } ) == 2
+            && defined $batch_ref->{ $table2 } && scalar( @{ $batch_ref->{ $table2 } } ) == 2,
+            "Found 4 entries from $table1 and $table2 with batch get"
+        );
+        
+        # clean up
+        foreach my $table( $table1, $table2 ) {
+            ok( $ddb->delete_table( $table ), "Table $table delete initialized" );
+            
+            foreach my $num( 1..60 ) {
+                unless( $ddb->exists_table( $table ) ) {
+                    pass( "Table $table is deleted" );
+                    last;
+                }
+            }
+        }
     } );
 }
