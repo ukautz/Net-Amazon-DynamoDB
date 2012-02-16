@@ -309,7 +309,7 @@ sub describe_table {
     my ( $self, $table ) = @_;
     
     # check table definition
-    $self->_check_table( "exists_table", $table );
+    $self->_check_table( "describe_table", $table );
     
     my ( $res, $res_ok, $json_ref ) = $self->request( DescribeTable => { TableName => $table } );
     # got result
