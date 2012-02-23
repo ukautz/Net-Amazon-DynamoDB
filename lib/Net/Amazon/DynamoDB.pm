@@ -71,6 +71,7 @@ use JSON;
 use LWP::UserAgent;
 use Net::Amazon::AWSSign;
 use XML::Simple qw/ XMLin /;
+use Data::Dumper;
 
 =head1 CLASS ATTRIBUTES
 
@@ -395,7 +396,7 @@ sub update_table {
     } );
     
     if ( $res_ok ) {
-        use Data::Dumper; print Dumper( { UPDATE => $json_ref } );
+        print Dumper( { UPDATE => $json_ref } );
     }
     
     # set error
@@ -717,7 +718,6 @@ sub update_item {
     
     # perform create
     my ( $res, $res_ok, $json_ref ) = $self->request( UpdateItem => \%update );
-    #use Data::Dumper; die Dumper( [ $json_ref ] );
     
     # get result
     if ( $res_ok ) {
@@ -1379,7 +1379,7 @@ sub request {
     
     # run request
     my $response = $self->lwp->request( $request );
-    #use Data::Dumper; print Dumper( $response );
+    $ENV{ DYNAMO_DB_DEBUG } && warn Dumper( $response );
     
     # get json
     my $json_ref = $response
