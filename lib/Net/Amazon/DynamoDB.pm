@@ -61,7 +61,7 @@ If you want an ORM-like interface with real objects to work with, this is implem
 use Moose;
 
 use v5.10;
-use version 0.74; our $VERSION = qv( "v0.1.0" );
+use version 0.74; our $VERSION = qv( "v0.1.1" );
 
 use DateTime::Format::HTTP;
 use DateTime;
@@ -80,7 +80,20 @@ The table definitions
 
 =cut
 
-has tables => ( isa => 'HashRef[HashRef]', is => 'rw', required => 1 );
+has tables => ( isa => 'HashRef[HashRef]', is => 'rw', required => 1, trigger => sub {
+    my ( $self ) = @_;
+    return unless $self->namespace;
+    my %new_table = ();
+    my $updated = 0;
+    foreach my $table( keys %{ $self->tables } ) {
+        my $table_updated = index( $table, $self->namespace ) == 0 ? $table : $self->_table_name( $table );
+        $new_table{ $table_updated } = $self->tables->{ $table };
+        $updated ++ unless $table_updated eq $table;
+    }
+    if ( $updated ) {
+        $self->{ tables } = \%new_table;
+    }
+} );
 
 =head2 lwp
 
@@ -134,6 +147,16 @@ Default: 0 (eventually consistent)
 
 has read_consistent => ( isa => 'Bool', is => 'rw', default => 0 );
 
+=head2 namespace
+
+Table prefix, prepended before table name on usage
+
+Default: ''
+
+=cut
+
+has namespace => ( isa => 'Str', is => 'ro', default => '' );
+
 =for _aws_signer
 
 Contains C<Net::Amazon::AWSSign> instance.
@@ -170,6 +193,9 @@ has _error => ( isa => 'Str', is => 'rw', predicate => '_has_error' );
 
 =head1 METHODS
 
+=cut
+
+
 =head2 create_table $table_name, $read_amount, $write_amount
 
 Create a new Table. Returns description of the table
@@ -191,6 +217,7 @@ Create a new Table. Returns description of the table
 
 sub create_table {
     my ( $self, $table, $read_amount, $write_amount ) = @_;
+    $table = $self->_table_name( $table );
     $read_amount ||= 10;
     $write_amount ||= 5;
     
@@ -259,6 +286,7 @@ Returns bool whether table is now in deleting state (succesfully performed)
 
 sub delete_table {
     my ( $self, $table ) = @_;
+    $table = $self->_table_name( $table );
     
     # check & get table definition
     my $table_ref = $self->_check_table( delete_table => $table );
@@ -307,6 +335,7 @@ If no such table exists, return is
 
 sub describe_table {
     my ( $self, $table ) = @_;
+    $table = $self->_table_name( $table );
     
     # check table definition
     $self->_check_table( "describe_table", $table );
@@ -355,6 +384,7 @@ Update read and write amount for a table
 
 sub update_table {
     my ( $self, $table, $read_amount, $write_amount ) = @_;
+    $table = $self->_table_name( $table );
     
     my ( $res, $res_ok, $json_ref ) = $self->request( UpdateTable => {
         TableName             => $table,
@@ -383,6 +413,7 @@ Returns bool whether table exists or not
 
 sub exists_table {
     my ( $self, $table ) = @_;
+    $table = $self->_table_name( $table );
     
     # check table definition
     $self->_check_table( "exists_table", $table );
@@ -411,7 +442,13 @@ sub list_tables {
     
     my ( $res, $res_ok, $json_ref ) = $self->request( ListTables => {} );
     if ( $res_ok ) {
-        return wantarray ? @{ $json_ref->{ TableNames } } : $json_ref->{ TableNames };
+        my $ns_length = length( $self->namespace );
+        my @table_names = map {
+            substr( $_, $ns_length );
+        } grep {
+            ! $self->namespace || index( $_, $self->namespace ) == 0
+        } @{ $json_ref->{ TableNames } };
+        return wantarray ? @table_names : \@table_names;
     }
     
     # set error
@@ -466,6 +503,7 @@ Filter containing expected values of the (existing) item to be updated
 
 sub put_item {
     my ( $self, $table, $item_ref, $where_ref, $return_old ) = @_;
+    $table = $self->_table_name( $table );
     
     # check definition
     my $table_ref = $self->_check_table( "put_item", $table );
@@ -586,6 +624,7 @@ Filter
 
 sub update_item {
     my ( $self, $table, $update_ref, $where_ref, $return_mode ) = @_;
+    $table = $self->_table_name( $table );
     
     # check definition
     my $table_ref = $self->_check_table( "put_item", $table );
@@ -721,6 +760,7 @@ Read a single item by hash (and range) key.
 
 sub get_item {
     my ( $self, $table, $pk_ref, $args_ref ) = @_;
+    $table = $self->_table_name( $table );
     $args_ref ||= {
         consistent => undef,
         attributes => undef
@@ -811,13 +851,15 @@ sub batch_get_item {
     # check definition
     my %table_map;
     foreach my $table( keys %$tables_ref ) {
+        $table = $self->_table_name( $table );
         my $table_ref = $self->_check_table( "batch_get_item", $table );
         $table_map{ $table } = $table_ref;
     }
     
     my %get = ( RequestItems => {} );
     foreach my $table( keys %table_map ) {
-        my $t_ref = $tables_ref->{ $table };
+        my $table_out = $self->_table_name( $table, 1 );
+        my $t_ref = $tables_ref->{ $table_out };
         
         # init items for table
         $get{ RequestItems }->{ $table } = {};
@@ -862,16 +904,18 @@ sub batch_get_item {
     # return on success
     if ( $res_ok && defined $json_ref->{ Responses } ) {
         my %res;
-        foreach my $table( keys %$tables_ref ) {
+        foreach my $table_out( keys %$tables_ref ) {
+            my $table = $self->_table_name( $table_out );
             next unless defined $json_ref->{ Responses }->{ $table } && defined $json_ref->{ Responses }->{ $table }->{ Items };
-            $res{ $table } = [];
-            foreach my $item_ref( @{ $json_ref->{ Responses }->{ $table }->{ Items } } ) {
+            my $items_ref = $json_ref->{ Responses }->{ $table };
+            $res{ $table_out } = [];
+            foreach my $item_ref( @{ $items_ref->{ Items } } ) {
                 my %res_item;
                 foreach my $attrib( keys %$item_ref ) {
                     my $type = $self->_attrib_type( $table, $attrib );
                     $res_item{ $attrib } = $item_ref->{ $attrib }->{ $type };
                 }
-                push @{ $res{ $table } }, \%res_item;
+                push @{ $res{ $table_out } }, \%res_item;
             }
         }
         return \%res;
@@ -895,6 +939,7 @@ Deletes a single item by primary key (hash or hash+range key).
 
 sub delete_item {
     my ( $self, $table, $where_ref ) = @_;
+    $table = $self->_table_name( $table );
     
     # check definition
     my $table_ref = $self->_check_table( "delete_item", $table );
@@ -1063,6 +1108,7 @@ Default: 0 (=return result)
 
 sub query_items {
     my ( $self, $table, $filter_ref, $args_ref ) = @_;
+    $table = $self->_table_name( $table );
     $args_ref ||= {
         limit       => undef,   # amount of items
         consistent  => 0,       # default: eventually, not hard, conistent
@@ -1183,6 +1229,7 @@ Main difference to query_items: A whole table scan is performed, which is much s
 
 sub scan_items {
     my ( $self, $table, $filter_ref, $args_ref ) = @_;
+    $table = $self->_table_name( $table );
     $args_ref ||= {
         limit       => undef,   # amount of items
         start_key   => undef,   # eg { hash_key => 1, range_key => "bla" }
@@ -1555,6 +1602,18 @@ sub _format_item {
         $formatted{ $attrib } = $from_ref->{ $attrib }->{ $type };
     }
     return \%formatted;
+}
+
+
+=for _table_name
+
+Returns prefixed table name
+
+=cut
+
+sub _table_name {
+    my ( $self, $table, $remove ) = @_;
+    return $remove ? substr( $table, length( $self->namespace ) ) : $self->namespace. $table;
 }
 
 

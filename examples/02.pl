@@ -45,18 +45,28 @@ print " OK\n";
 
 print "Put items ";
 $ddb->put_item( $table => {
-    hid  => 'node/somenode/http',
-    rid  => '~web'. $_,
-    data => 'I Am Web '. $_
+    hid  => 'thehash',
+    rid  => 'therid'. $_,
+    data => 'I am Number '. $_
 } ) for 1..10;
 print " OK\n";
 
-print "Query Items ";
-my $query_ref = $ddb->query_items( $table => {
-    hid => 'node/somenode/http',
-    rid => {
-        BEGINS_WITH => '~'
-    }
+print "Batch Get ";
+my $get_ref = $ddb->batch_get_item( {
+    $table => [
+        {
+            hid => 'thehash',
+            rid => 'therid1'
+        },
+        {
+            hid => 'thehash',
+            rid => 'therid5'
+        },
+        {
+            hid => 'thehash',
+            rid => 'therid7'
+        }
+    ]
 } );
 print " OK\n";
-print Dumper( $query_ref );
+print Dumper( $get_ref );
