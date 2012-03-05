@@ -61,7 +61,7 @@ If you want an ORM-like interface with real objects to work with, this is implem
 use Moose;
 
 use v5.10;
-use version 0.74; our $VERSION = qv( "v0.1.1" );
+use version 0.74; our $VERSION = qv( "v0.1.2" );
 
 use DateTime::Format::HTTP;
 use DateTime;
@@ -72,6 +72,7 @@ use LWP::UserAgent;
 use Net::Amazon::AWSSign;
 use XML::Simple qw/ XMLin /;
 use Data::Dumper;
+use Carp qw/ croak /;
 
 =head1 CLASS ATTRIBUTES
 
@@ -158,43 +159,45 @@ Default: ''
 
 has namespace => ( isa => 'Str', is => 'ro', default => '' );
 
-=for _aws_signer
+=head2 raise_error
 
-Contains C<Net::Amazon::AWSSign> instance.
+Whether database errors (eg 4xx Response from DynamoDB) raise errors or not.
+
+Default: 0
 
 =cut
+
+has raise_error => ( isa => 'Bool', is => 'ro', default => 0 );
+
+#
+# _aws_signer
+#   Contains C<Net::Amazon::AWSSign> instance.
+#
 
 has _aws_signer => ( isa => 'Net::Amazon::AWSSign', is => 'rw', predicate => '_has_aws_signer' );
 
-=for _security_token_url
-
-URL for receiving security token
-
-=cut
+#
+# _security_token_url
+#   URL for receiving security token
+#
 
 has _security_token_url => ( isa => 'Str', is => 'rw', default => 'https://sts.amazonaws.com/?Action=GetSessionToken&Version=2011-06-15' );
 
-
-=for _credentials
-
-Contains credentials received by GetSession
-
-=cut
+#
+# _credentials
+#   Contains credentials received by GetSession
+#
 
 has _credentials => ( isa => 'HashRef[Str]', is => 'rw', predicate => '_has_credentials' );
 
-
-=for _error
-
-Contains credentials received by GetSession
-
-=cut
+#
+# _error
+#   Contains credentials received by GetSession
+#
 
 has _error => ( isa => 'Str', is => 'rw', predicate => '_has_error' );
 
 =head1 METHODS
-
-=cut
 
 
 =head2 create_table $table_name, $read_amount, $write_amount
@@ -271,7 +274,7 @@ sub create_table {
     }
     
     # set error
-    $self->error( 'create_table failed: '. ( $res ? $res->decoded_content : 'No Result' ) );
+    $self->error( 'create_table failed: '. $self->_extract_error_message( $res ) );
     return ;
 }
 
@@ -301,7 +304,7 @@ sub delete_table {
     }
     
     # set error
-    $self->error( 'delete_table failed: '. ( $res ? $res->decoded_content : 'No Result' ) );
+    $self->error( 'delete_table failed: '. $self->_extract_error_message( $res ) );
     return ;
 }
 
@@ -372,7 +375,7 @@ sub describe_table {
     }
     
     # set error
-    $self->error( 'describe_table failed: '. ( $res ? $res->decoded_content : 'No Result' ) );
+    $self->error( 'describe_table failed: '. $self->_extract_error_message( $res ) );
     return ;
 }
 
@@ -396,11 +399,11 @@ sub update_table {
     } );
     
     if ( $res_ok ) {
-        print Dumper( { UPDATE => $json_ref } );
+        return 1;
     }
     
     # set error
-    $self->error( 'update_table failed: '. ( $res ? $res->decoded_content : 'No Result' ) );
+    $self->error( 'update_table failed: '. $self->_extract_error_message( $res ) );
     return ;
 }
 
@@ -426,7 +429,7 @@ sub exists_table {
     }
     
     # set error
-    $self->error( 'exists_table failed: '. ( $res ? $res->decoded_content : 'No Result' ) );
+    $self->error( 'exists_table failed: '. $self->_extract_error_message( $res ) );
     return ;
 }
 
@@ -453,7 +456,7 @@ sub list_tables {
     }
     
     # set error
-    $self->error( 'list_tables failed: '. ( $res ? $res->decoded_content : 'No Result' ) );
+    $self->error( 'list_tables failed: '. $self->_extract_error_message( $res ) );
     return ;
 }
 
@@ -510,7 +513,7 @@ sub put_item {
     my $table_ref = $self->_check_table( "put_item", $table );
     
     # check primary keys
-    die "put_item: Missing value for hash key '$table_ref->{ hash_key }'"
+    croak "put_item: Missing value for hash key '$table_ref->{ hash_key }'"
         unless defined $item_ref->{ $table_ref->{ hash_key } }
         && length( $item_ref->{ $table_ref->{ hash_key } } );
     
@@ -557,7 +560,7 @@ sub put_item {
     }
     
     # set error
-    $self->error( 'put_item failed: '. ( $res ? $res->decoded_content : 'No Result' ) );
+    $self->error( 'put_item failed: '. $self->_extract_error_message( $res ) );
     return ;
 }
 
@@ -630,11 +633,18 @@ sub update_item {
     # check definition
     my $table_ref = $self->_check_table( "put_item", $table );
     
+    croak "update_item: Cannot update hash key value, do not set it in update-clause"
+        if defined $update_ref->{ $table_ref->{ hash_key } };
+    
+    croak "update_item: Cannot update range key value, do not set it in update-clause"
+        if defined $table_ref->{ range_key }
+        && defined $update_ref->{ $table_ref->{ range_key } };
+    
     # check primary keys
-    die "update_item: Missing value for hash key '$table_ref->{ hash_key }'"
+    croak "update_item: Missing value for hash key '$table_ref->{ hash_key }' in where-clause"
         unless defined $where_ref->{ $table_ref->{ hash_key } }
         && length( $where_ref->{ $table_ref->{ hash_key } } );
-    die "update_item: Missing value for range key '$table_ref->{ hash_key }'"
+    croak "update_item: Missing value for range key '$table_ref->{ hash_key }' in where-clause"
         if defined $table_ref->{ range_key } && !(
             defined $where_ref->{ $table_ref->{ range_key } }
             && length( $where_ref->{ $table_ref->{ range_key } } )
@@ -642,9 +652,9 @@ sub update_item {
     
     # check other attributes
     $self->_check_keys( "put_item: item values", $table, $update_ref );
-    die "update_item: Cannot update hash key '$table_ref->{ hash_key }'. You have to delete and put the item!"
+    croak "update_item: Cannot update hash key '$table_ref->{ hash_key }'. You have to delete and put the item!"
         if defined $update_ref->{ $table_ref->{ hash_key } };
-    die "update_item: Cannot update range key '$table_ref->{ hash_key }'. You have to delete and put the item!"
+    croak "update_item: Cannot update range key '$table_ref->{ hash_key }'. You have to delete and put the item!"
         if defined $table_ref->{ range_key } && defined $update_ref->{ $table_ref->{ range_key } };
     
     # having where -> check now
@@ -732,7 +742,7 @@ sub update_item {
     }
     
     # set error
-    $self->error( 'put_item failed: '. ( $res ? $res->decoded_content : 'No Result' ) );
+    $self->error( 'put_item failed: '. $self->_extract_error_message( $res ) );
     return ;
 }
 
@@ -771,10 +781,10 @@ sub get_item {
     my $table_ref = $self->_check_table( "get_item", $table );
     
     # check primary keys
-    die "get_item: Missing value for hash key '$table_ref->{ hash_key }'"
+    croak "get_item: Missing value for hash key '$table_ref->{ hash_key }'"
         unless defined $pk_ref->{ $table_ref->{ hash_key } }
         && length( $pk_ref->{ $table_ref->{ hash_key } } );
-    die "get_item: Missing value for Range Key '$table_ref->{ range_key }'"
+    croak "get_item: Missing value for Range Key '$table_ref->{ range_key }'"
         if defined $table_ref->{ range_key } && !(
             defined $pk_ref->{ $table_ref->{ range_key } }
             && length( $pk_ref->{ $table_ref->{ hash_key } } )
@@ -811,7 +821,7 @@ sub get_item {
     return undef if $res_ok;
     
     # set error
-    $self->error( 'get_item failed: '. ( $res ? $res->decoded_content : 'No Result' ) );
+    $self->error( 'get_item failed: '. $self->_extract_error_message( $res ) );
     return ;
 }
 
@@ -922,7 +932,7 @@ sub batch_get_item {
     }
     
     # set error
-    $self->error( 'batch_get_item failed: '. ( $res ? $res->decoded_content : 'No Result' ) );
+    $self->error( 'batch_get_item failed: '. $self->_extract_error_message( $res ) );
     return ;
 }
 
@@ -945,10 +955,10 @@ sub delete_item {
     my $table_ref = $self->_check_table( "delete_item", $table );
     
     # check primary keys
-    die "delete_item: Missing value for hash key '$table_ref->{ hash_key }'"
+    croak "delete_item: Missing value for hash key '$table_ref->{ hash_key }'"
         unless defined $where_ref->{ $table_ref->{ hash_key } }
         && length( $where_ref->{ $table_ref->{ hash_key } } );
-    die "delete_item: Missing value for Range Key '$table_ref->{ range_key }'"
+    croak "delete_item: Missing value for Range Key '$table_ref->{ range_key }'"
         if defined $table_ref->{ range_key } && ! (
             defined $where_ref->{ $table_ref->{ range_key } }
             && length( $where_ref->{ $table_ref->{ range_key } } )
@@ -1001,7 +1011,7 @@ sub delete_item {
         return {};
     }
     
-    $self->error( 'delete_item failed: '. ( $res ? $res->decoded_content : 'No Result' ) );
+    $self->error( 'delete_item failed: '. $self->_extract_error_message( $res ) );
     return;
 }
 
@@ -1119,7 +1129,7 @@ sub query_items {
     };
     
     # check definition
-    die "query_items: Table '$table' does not exist in table definition"
+    croak "query_items: Table '$table' does not exist in table definition"
         unless defined $self->tables->{ $table };
     my $table_ref = $self->tables->{ $table };
     
@@ -1138,7 +1148,7 @@ sub query_items {
     my %filter = %$filter_ref;
     
     if ( defined $filter{ $table_ref->{ hash_key } } ) {
-        die "query_items: Missing hash key value in filter-clause"
+        croak "query_items: Missing hash key value in filter-clause"
             unless defined $filter{ $table_ref->{ hash_key } };
         $query{ HashKeyValue } = {
             $self->_attrib_type( $table, $table_ref->{ hash_key } ) =>
@@ -1148,7 +1158,7 @@ sub query_items {
     
     # adding range to filter
     if ( defined $table_ref->{ range_key }) {
-        die "query_items: Missing range key value in filter-clause"
+        croak "query_items: Missing range key value in filter-clause"
             unless defined $filter{ $table_ref->{ range_key } };
         # r_ref = { GT => 1 } OR { BETWEEN => [ 1, 5 ] } OR { EQ => [ 1 ] } OR 5 FOR { EQ => 5 }
         my $r_ref = delete $filter{ $table_ref->{ range_key } };
@@ -1165,7 +1175,7 @@ sub query_items {
     }
     
     # too much keys
-    die "query_items: Cannot use keys ". join( ', ', sort keys %filter ). " in in filter - only hash and range key allowed."
+    croak "query_items: Cannot use keys ". join( ', ', sort keys %filter ). " in in filter - only hash and range key allowed."
         if keys %filter;
     
     
@@ -1211,7 +1221,7 @@ sub query_items {
     }
     
     # error
-    $self->error( 'query_items failed: '. ( $res ? $res->decoded_content : 'No Result' ) );
+    $self->error( 'query_items failed: '. $self->_extract_error_message( $res ) );
     return;
 }
 
@@ -1238,7 +1248,7 @@ sub scan_items {
     };
     
     # check definition
-    die "scan_items: Table '$table' does not exist in table definition"
+    croak "scan_items: Table '$table' does not exist in table definition"
         unless defined $self->tables->{ $table };
     my $table_ref = $self->tables->{ $table };
     
@@ -1321,7 +1331,7 @@ sub scan_items {
     }
     
     # error
-    $self->error( 'scan_items failed: '. ( $res ? $res->decoded_content : 'No Result' ) );
+    $self->error( 'scan_items failed: '. $self->_extract_error_message( $res ) );
     return;
 }
 
@@ -1399,6 +1409,7 @@ Get/set last error
 
 sub error {
     my ( $self, $str ) = @_;
+    croak $str if $self->raise_error();
     if ( $str ) {
         $self->_error( $str );
     }
@@ -1408,11 +1419,10 @@ sub error {
 
 
 
-=for comment _init_security_token
-
-XXXXXX Creates new temporary security token (, access and secret key), if not exist
-
-=cut
+#
+# _init_security_token
+#   Creates new temporary security token (, access and secret key), if not exist
+#
 
 sub _init_security_token {
     my ( $self ) = @_;
@@ -1444,11 +1454,10 @@ sub _init_security_token {
 }
 
 
-=for _check_table $table
-
-Check whether table exists and returns definition
-
-=cut
+#
+# _check_table $table
+#   Check whether table exists and returns definition
+#
 
 sub _check_table {
     my ( $self, $meth, $table ) = @_;
@@ -1456,18 +1465,17 @@ sub _check_table {
         $table = $meth;
         $meth = "check_table";
     }
-    die "$meth: Table '$table' not defined"
+    croak "$meth: Table '$table' not defined"
         unless defined $self->tables->{ $table };
     
     return $self->tables->{ $table };
 }
 
 
-=for _check_keys $meth, $table, $key_ref
-
-Check attributes. Dies on invalid (not registererd) attributes.
-
-=cut
+#
+# _check_keys $meth, $table, $key_ref
+#   Check attributes. Dies on invalid (not registererd) attributes.
+#
 
 sub _check_keys {
     my ( $self, $meth, $table, $key_ref ) = @_;
@@ -1482,20 +1490,18 @@ sub _check_keys {
     ;
     
     my @invalid_keys = grep { ! defined $table_ref->{ attributes }->{ $_ } } @keys;
-    die "$meth: Invalid keys: ". join( ', ', @invalid_keys )
+    croak "$meth: Invalid keys: ". join( ', ', @invalid_keys )
         if @invalid_keys;
     
     return wantarray ? @keys : \@keys;
 }
 
 
-=for _build_pk_filter $table, $where_ref, $node_ref
-
-Build attribute filter "HashKeyElement" and "RangeKeyElement".
-
-Hash key and range key will be deleted from where clause
-
-=cut
+#
+# _build_pk_filter $table, $where_ref, $node_ref
+#   Build attribute filter "HashKeyElement" and "RangeKeyElement".
+#   Hash key and range key will be deleted from where clause
+#
 
 sub _build_pk_filter {
     my ( $self, $table, $where_ref, $node_ref ) = @_;
@@ -1512,19 +1518,17 @@ sub _build_pk_filter {
 }
 
 
-=for _build_attrib_filter $table, $where_ref, $node_ref
-
-Build attribute filter "Expected" from given where-clause-ref
-
-    {
-        attrib1 => 'somevalue', # -> { attrib1 => { Value => { S => 'somevalue' } } }
-        attrib2 => \1,          # -> { attrib2 => { Exists => true } }
-        attrib3 => {            # -> { attrib3 => { Value => { S => 'bla' } } }
-            value => 'bla'
-        }
-    }
-
-=cut
+#
+# _build_attrib_filter $table, $where_ref, $node_ref
+#   Build attribute filter "Expected" from given where-clause-ref
+# {
+#     attrib1 => 'somevalue', # -> { attrib1 => { Value => { S => 'somevalue' } } }
+#     attrib2 => \1,          # -> { attrib2 => { Exists => true } }
+#     attrib3 => {            # -> { attrib3 => { Value => { S => 'bla' } } }
+#         value => 'bla'
+#     }
+# }
+#
 
 sub _build_attrib_filter {
     my ( $self, $table, $where_ref, $node_ref ) = @_;
@@ -1551,11 +1555,10 @@ sub _build_attrib_filter {
 }
 
 
-=for _attrib_type $table, $key
-
-Returns type ("S", "N", "NS", "SS") of existing attribute in table
-
-=cut
+#
+# _attrib_type $table, $key
+#   Returns type ("S", "N", "NS", "SS") of existing attribute in table
+#
 
 sub _attrib_type {
     my ( $self, $table, $key ) = @_;
@@ -1564,11 +1567,10 @@ sub _attrib_type {
 }
 
 
-=for _attribs $table
-
-Returns list of attributes in table
-
-=cut
+#
+# _attribs $table
+#   Returns list of attributes in table
+#
 
 sub _attribs {
     my ( $self, $table ) = @_;
@@ -1577,21 +1579,19 @@ sub _attribs {
 }
 
 
-=for _format_item $table, $from_ref
-
-Formats result item into simpler format
-
-    {
-        attrib => { S => "bla" }
-    }
-
-to
-
-    {
-        attrib => 'bla'
-    }
-
-=cut
+#
+# _format_item $table, $from_ref
+#
+#   Formats result item into simpler format
+# {
+#     attrib => { S => "bla" }
+# }
+#
+#   to
+# {
+#     attrib => 'bla'
+# }
+#
 
 sub _format_item {
     my ( $self, $table, $from_ref ) = @_;
@@ -1605,17 +1605,40 @@ sub _format_item {
 }
 
 
-=for _table_name
-
-Returns prefixed table name
-
-=cut
+#
+# _table_name
+#   Returns prefixed table name
+#
 
 sub _table_name {
     my ( $self, $table, $remove ) = @_;
     return $remove ? substr( $table, length( $self->namespace ) ) : $self->namespace. $table;
 }
 
+
+#
+# _extract_error_message
+#
+
+sub _extract_error_message {
+    my ( $self, $response ) = @_;
+    my $msg = '';
+    if ( $response ) {
+        my $json = eval { $self->json->decode( $response->decoded_content ) } || { error => "Failed to parse JSON result" };
+        if ( defined $json->{ __type } ) {
+            $msg = join( ' ** ',
+                "ErrorType: $json->{ __type }",
+                "ErrorMessage: $json->{ message }",
+            );
+        }
+        else {
+            $msg = $json->{ error };
+        }
+    }
+    else {
+        $msg = 'No response received. DynamoDB down?'
+    }
+}
 
 =head1 AUTHOR
 
