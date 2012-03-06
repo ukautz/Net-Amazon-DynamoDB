@@ -28,7 +28,7 @@ SKIP: {
                 access_key  => $ENV{ AWS_ACCESS_KEY_ID },
                 secret_key  => $ENV{ AWS_SECRET_ACCESS_KEY },
                 namespace   => $namespace,
-                raise_error => 1
+                raise_error => 1,
                 tables      => {
                     $table1 => {
                         hash_key => 'id',

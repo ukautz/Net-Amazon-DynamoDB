@@ -61,7 +61,7 @@ If you want an ORM-like interface with real objects to work with, this is implem
 use Moose;
 
 use v5.10;
-use version 0.74; our $VERSION = qv( "v0.1.2" );
+use version 0.74; our $VERSION = qv( "v0.1.3" );
 
 use DateTime::Format::HTTP;
 use DateTime;
