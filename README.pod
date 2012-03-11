@@ -1,0 +1,59 @@
+=head1 NAME
+
+Net::Amazon::DynamoDB - Simple interface for Amazon DynamoDB
+
+=head1 DESCRIPTION
+
+Simple to use interface for Amazon DynamoDB
+
+If you want an ORM-like interface with real objects to work with, this is implementation is not for you. If you just want to access DynamoDB in a simple/quick manner - you are welcome.
+
+See L<https://github.com/ukautz/Net-Amazon-DynamoDB> for latest release.
+
+=head1 SYNOPSIS
+
+    my $ddb = Net::Amazon::DynamoDB->new(
+        access_key => $my_access_key,
+        secret_key => $my_secret_key,
+        tables     => {
+            
+            # table with only hash key
+            sometable => {
+                hash_key   => 'id',
+                attributes => {
+                    id   => 'N',
+                    name => 'S'
+                }
+            },
+            
+            # table with hash and reange key key
+            othertable => {
+                hash_key   => 'id',
+                range_key  => 'range_id',
+                attributes => {
+                    id       => 'N',
+                    range_id => 'N',
+                    attrib1  => 'S',
+                    attrib2  => 'S'
+                }
+            }
+        }
+    );
+    
+    # create both tables with 10 read and 5 write unites
+    $ddb->exists_table( $_ ) || $ddb->create_table( $_, 10, 5 )
+        for qw/ sometable othertable /;
+    
+    # insert something into tables
+    $ddb->put_item( sometable => {
+        id   => 5,
+        name => 'bla'
+    } ) or die $ddb->error;
+    $ddb->put_item( sometable => {
+        id        => 5,
+        range_key => 7,
+        attrib1   => 'It is now '. localtime(),
+        attrib1   => 'Or in unix timstamp '. time(),
+    } ) or die $ddb->error;
+
+=cut

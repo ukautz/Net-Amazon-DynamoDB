@@ -10,6 +10,8 @@ Simple to use interface for Amazon DynamoDB
 
 If you want an ORM-like interface with real objects to work with, this is implementation is not for you. If you just want to access DynamoDB in a simple/quick manner - you are welcome.
 
+See L<https://github.com/ukautz/Net-Amazon-DynamoDB> for latest release.
+
 =head1 SYNOPSIS
 
     my $ddb = Net::Amazon::DynamoDB->new(
