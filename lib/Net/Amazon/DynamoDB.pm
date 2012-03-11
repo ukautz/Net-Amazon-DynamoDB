@@ -61,7 +61,7 @@ If you want an ORM-like interface with real objects to work with, this is implem
 use Moose;
 
 use v5.10;
-use version 0.74; our $VERSION = qv( "v0.1.3" );
+use version 0.74; our $VERSION = qv( "v0.1.4" );
 
 use DateTime::Format::HTTP;
 use DateTime;
@@ -422,15 +422,16 @@ sub exists_table {
     # check table definition
     $self->_check_table( "exists_table", $table );
     
-    my ( $res, $res_ok, $json_ref ) = $self->request( DescribeTable => { TableName => $table } );
+    my ( $res, $res_ok, $json_ref );
+    eval {
+        ( $res, $res_ok, $json_ref ); = $self->request( DescribeTable => { TableName => $table } );
+    };
     
-    if ( $res_ok ) {
-        return defined $json_ref->{ Table } && defined $json_ref->{ Table }->{ ItemCount } ? 1 : 0;
-    }
+    return defined $json_ref->{ Table } && defined $json_ref->{ Table }->{ ItemCount } ? 1 : 0
+        if $res_ok;
     
     # set error
-    $self->error( 'exists_table failed: '. $self->_extract_error_message( $res ) );
-    return ;
+    return 0;
 }
 
 
@@ -1395,6 +1396,16 @@ sub request {
     my $json_ref = $response
         ? eval { $self->json->decode( $response->decoded_content ) } || { error => "Failed to parse JSON result" }
         : { error => "Failed to get result" };
+    
+    # handle error
+    if ( defined $json_ref->{ error } && $json_ref->{ error } ) {
+        $self->error( $json_ref->{ error } );
+    }
+    
+    # handle exception
+    elsif ( defined $json_ref->{ __type } && $json_ref->{ __type } =~ /Exception/ && $json_ref->{ Message } ) {
+        $self->error( $json_ref->{ Message } );
+    }
     
     return wantarray ? ( $response, $response ? $response->is_success : 0, $json_ref ) : $json_ref;
 }
