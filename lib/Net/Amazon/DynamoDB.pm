@@ -426,7 +426,7 @@ sub exists_table {
     
     my ( $res, $res_ok, $json_ref );
     eval {
-        ( $res, $res_ok, $json_ref ); = $self->request( DescribeTable => { TableName => $table } );
+        ( $res, $res_ok, $json_ref ) = $self->request( DescribeTable => { TableName => $table } );
     };
     
     return defined $json_ref->{ Table } && defined $json_ref->{ Table }->{ ItemCount } ? 1 : 0
