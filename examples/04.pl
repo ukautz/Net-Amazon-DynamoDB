@@ -51,8 +51,22 @@ $ddb->put_item( $table => {
 } ) for 1..10;
 print " OK\n";
 
-print "Update item ";
+print "Update items ";
+$ddb->update_item( $table => {
+    str_array => \[ "bla add $_" ],
+    num_array => \[ $_ + 100 ]
+}, {
+    hid => 'something'. $_,
+} ) for 1..5;
+$ddb->update_item( $table => {
+    str_array => [ "bla replace $_" ],
+    num_array => [ $_ + 10000 ]
+}, {
+    hid => 'something'. $_,
+} ) for 6..10;
+print " OK\n";
+
+print "Scan & output items\n";
 my @res = $ddb->scan_items( $table );
 print Dumper( \@res );
-print " OK\n";
 

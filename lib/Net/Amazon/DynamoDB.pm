@@ -590,7 +590,14 @@ sub put_item {
     # build the item
     foreach my $key( keys %$item_ref ){
         my $type = $self->_attrib_type( $table, $key );
-        my $value = $item_ref->{ $key } .'';
+        my $value;
+        if ( $type eq 'SS' || $type eq 'NS' ) {
+            my @values = map { $_. '' } ( ref( $item_ref->{ $key } ) ? @{ $item_ref->{ $key } } : () );
+            $value = \@values;
+        }
+        else {
+            $value = $item_ref->{ $key } .'';
+        }
         $put{ Item }->{ $key } = { $type => $value };
     }
     
@@ -748,7 +755,7 @@ sub update_item {
         # replace or add for array types
         elsif ( $type =~ /^[NS]S$/ ) {
             
-            # add
+            # add \[ qw/ value1 value2 / ]
             if ( ref( $value ) eq 'REF' ) {
                 $update{ AttributeUpdates }->{ $key } = {
                     Value  => { $type => [ map { "$_" } @$$value ] },
@@ -756,7 +763,7 @@ sub update_item {
                 };
             }
             
-            # replace
+            # replace [ qw/ value1 value2 / ]
             else {
                 $update{ AttributeUpdates }->{ $key } = {
                     Value  => { $type => [ map { "$_" } @$value ] },
