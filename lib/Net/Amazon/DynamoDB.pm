@@ -1804,11 +1804,17 @@ __PACKAGE__->meta->make_immutable;
 
 =head1 AUTHOR
 
-Ulrich Kautz <uk@fortrabbit.de>
+=over
+
+=item * Ulrich Kautz <uk@fortrabbit.de>
+
+=item MadHacker L<http://stackoverflow.com/users/1139526/madhacker> (the signing code in request method)
+
+=back
 
 =head1 COPYRIGHT
 
-Copyright (c) 2011 the L</AUTHOR> as listed above
+Copyright (c) 2012 the L</AUTHOR> as listed above
 
 =head1 LICENCSE
 
