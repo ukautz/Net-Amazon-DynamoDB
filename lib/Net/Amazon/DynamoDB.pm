@@ -1799,6 +1799,9 @@ sub _extract_error_message {
     }
 }
 
+__PACKAGE__->meta->make_immutable;
+
+
 =head1 AUTHOR
 
 Ulrich Kautz <uk@fortrabbit.de>
