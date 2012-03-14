@@ -972,7 +972,8 @@ Deletes a single item by primary key (hash or hash+range key).
 =cut
 
 sub delete_item {
-    my ( $self, $table, $where_ref ) = @_;
+    my ( $self, $table, $where_ref, $args_ref ) = @_;
+    $args_ref ||= { return_old => 0 };
     $table = $self->_table_name( $table );
     
     # check definition
@@ -995,7 +996,7 @@ sub delete_item {
     my %delete = (
         TableName    => $table,
         Key          => {},
-        ReturnValues => 'ALL_OLD'
+        ( $args_ref->{ return_old } ? ( ReturnValues => 'ALL_OLD' ) : () )
     );
     
     # setup pk
@@ -1538,6 +1539,7 @@ sub request {
             ? eval { $self->json->decode( $response->decoded_content ) } || { error => "Failed to parse JSON result" }
             : { error => "Failed to get result" };
         if ( defined $json_ref->{ __type } && $json_ref->{ __type } =~ /ProvisionedThroughputExceededException/ && $tries-- > 0 ) {
+            $ENV{ DYNAMO_DB_DEBUG_RETRY } && warn "Retry $target: $json\n";
             usleep( $self->retry_timeout * 1_000_000 );
             next;
         }
@@ -1808,7 +1810,7 @@ __PACKAGE__->meta->make_immutable;
 
 =item * Ulrich Kautz <uk@fortrabbit.de>
 
-=item MadHacker L<http://stackoverflow.com/users/1139526/madhacker> (the signing code in request method)
+=item * Thanks to MadHacker L<http://stackoverflow.com/users/1139526/madhacker> (the signing code in request method)
 
 =back
 
