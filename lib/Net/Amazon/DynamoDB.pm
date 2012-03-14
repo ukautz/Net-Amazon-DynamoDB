@@ -63,7 +63,7 @@ See L<https://github.com/ukautz/Net-Amazon-DynamoDB> for latest release.
 use Moose;
 
 use v5.10;
-use version 0.74; our $VERSION = qv( "v0.1.5" );
+use version 0.74; our $VERSION = qv( "v0.1.6" );
 
 use DateTime::Format::HTTP;
 use DateTime;
