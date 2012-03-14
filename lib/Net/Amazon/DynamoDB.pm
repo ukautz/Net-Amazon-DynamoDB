@@ -87,12 +87,46 @@ The table definitions
 
 has tables => ( isa => 'HashRef[HashRef]', is => 'rw', required => 1, trigger => sub {
     my ( $self ) = @_;
+    
+    # check table
+    while( my ( $table, $table_ref ) = each %{ $self->{ tables } } ) {
+        
+        # determine primary keys
+        my @check_pk = ( 'hash' );
+        push @check_pk, 'range'
+            if defined $table_ref->{ range_key };
+        
+        # check primary keys
+        foreach my $check_pk( @check_pk ) {
+            my $key_pk = "${check_pk}_key";
+            my $name_pk = $table_ref->{ $key_pk };
+            croak "Missing '$key_pk' attribute in '$table' table definition\n"
+                unless defined $table_ref->{ $key_pk };
+            croak "Missing $check_pk key attribute in '$table' table attribute declaration: "
+                . "{ $table => { attributes => { '$name_pk' => 'S|N' } }\n"
+                unless defined $table_ref->{ attributes }->{ $name_pk };
+            croak "Wrong data type for $check_pk key attribute. Got '$table_ref->{ attributes }->{ $name_pk }',"
+                . " expect 'S' or 'N'"
+                unless $table_ref->{ attributes }->{ $name_pk } =~ /^(S|N)$/;
+        }
+        
+        # check attributes
+        while( my( $attr_name, $attr_type ) = each %{ $table_ref->{ attributes } } ) {
+            croak "Wrong data type for attribute '$attr_name' in table '$table': Got '$attr_type' was"
+                . " expecting 'S' or 'N' or 'SS' or 'NS'"
+                unless $attr_type =~ /^[NS]S?$/;
+        }
+    }
+    
+    # no need to go further, if no namespace given
     return unless $self->namespace;
+    
+    # update table definitions with namespace
     my %new_table = ();
     my $updated = 0;
-    foreach my $table( keys %{ $self->tables } ) {
+    foreach my $table( keys %{ $self->{ tables } } ) {
         my $table_updated = index( $table, $self->namespace ) == 0 ? $table : $self->_table_name( $table );
-        $new_table{ $table_updated } = $self->tables->{ $table };
+        $new_table{ $table_updated } = $self->{ tables }->{ $table };
         $updated ++ unless $table_updated eq $table;
     }
     if ( $updated ) {
