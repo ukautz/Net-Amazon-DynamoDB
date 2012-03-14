@@ -63,7 +63,7 @@ See L<https://github.com/ukautz/Net-Amazon-DynamoDB> for latest release.
 use Moose;
 
 use v5.10;
-use version 0.74; our $VERSION = qv( "v0.1.4" );
+use version 0.74; our $VERSION = qv( "v0.1.5" );
 
 use DateTime::Format::HTTP;
 use DateTime;
@@ -75,6 +75,7 @@ use Net::Amazon::AWSSign;
 use XML::Simple qw/ XMLin /;
 use Data::Dumper;
 use Carp qw/ croak /;
+use Time::HiRes qw/ usleep /;
 
 =head1 CLASS ATTRIBUTES
 
@@ -170,6 +171,26 @@ Default: 0
 =cut
 
 has raise_error => ( isa => 'Bool', is => 'ro', default => 0 );
+
+=head2 max_retries
+
+Amount of retries a query will be tries if ProvisionedThroughputExceededException is raised until final error.
+
+Default: 0 (do only once, no retries)
+
+=cut
+
+has max_retries => ( isa => 'Int', is => 'ro', default => 1 );
+
+=head2 retry_timeout
+
+Wait period in seconds between tries. Float allowed.
+
+Default: 0.1 (100ms)
+
+=cut
+
+has retry_timeout => ( isa => 'Num', is => 'ro', default => 0.1 );
 
 #
 # _aws_signer
@@ -1024,8 +1045,18 @@ sub delete_item {
 
 Search in a table with hash AND range key.
 
-    my ( $count, $items_ref ) = $ddb->qyery_items( some_table => { id => 123, my_range_id => { GT => 5 } } );
+    my ( $count, $items_ref, $next_start_keys_ref )
+        = $ddb->qyery_items( some_table => { id => 123, my_range_id => { GT => 5 } } );
     print "Found $count items, where last id is ". $items_ref->[-1]->{ id }. "\n";
+    
+    # iterate through al all "pages"
+    my $next_start_keys_ref;
+    do {
+        ( my $count, my $items_ref, $next_start_keys_ref )
+            = $ddb->qyery_items( some_table => { id => 123, my_range_id => { GT => 5 } }, {
+                start_key => $next_start_keys_ref
+            } );
+    } while( $next_start_keys_ref );
 
 =over
 
@@ -1112,6 +1143,14 @@ Instead of returning the actual result, return the count.
 
 Default: 0 (=return result)
 
+=item * all
+
+Iterate through all pages (see link to API above) and return them all.
+
+Can take some time. Also: max_retries might be needed to set, as a scan/query create lot's of read-units, and an immediate reading of the next "pages" lead to an Exception due to too many reads.
+
+Default: 0 (=first "page" of items)
+
 =back
 
 =back
@@ -1121,6 +1160,7 @@ Default: 0 (=return result)
 
 sub query_items {
     my ( $self, $table, $filter_ref, $args_ref ) = @_;
+    my $table_orig = $table;
     $table = $self->_table_name( $table );
     $args_ref ||= {
         limit       => undef,   # amount of items
@@ -1129,6 +1169,7 @@ sub query_items {
         start_key   => undef,   # eg { pk_name => 123, pk_other => 234 }
         attributes  => undef,   # eq [ qw/ attrib1 attrib2 / ]
         count       => 0,       # returns amount instead of the actual result
+        all         => 0,       # read all entries (runs possibly multiple queries)
     };
     
     # check definition
@@ -1212,6 +1253,7 @@ sub query_items {
     }
     
     # perform query
+    #print Dumper( { QUERY => \%query } );
     my ( $res, $res_ok, $json_ref ) = $self->request( Query => \%query );
     
     # format & return result
@@ -1220,7 +1262,52 @@ sub query_items {
         foreach my $from_ref( @{ $json_ref->{ Items } } ) {
             push @res, $self->_format_item( $table, $from_ref );
         }
-        return wantarray ? ( $json_ref->{ Count }, \@res ) : \@res;
+        my $count = $json_ref->{ Count };
+        
+        # build start key for return or use
+        my $next_start_key_ref;
+        if ( defined $json_ref->{ LastEvaluatedKey } ) {
+            $next_start_key_ref = {};
+            
+            # add hash key to start key
+            my $hash_type = $self->_attrib_type( $table, $table_ref->{ hash_key } );
+            $next_start_key_ref->{ $table_ref->{ hash_key } } = $json_ref->{ LastEvaluatedKey }->{ HashKeyElement }->{ $hash_type };
+            
+            # add range key to start key
+            if ( defined $table_ref->{ range_key } && defined $json_ref->{ LastEvaluatedKey }->{ RangeKeyElement } ) {
+                my $range_type = $self->_attrib_type( $table, $table_ref->{ range_key } );
+                $next_start_key_ref->{ $table_ref->{ range_key } } = $json_ref->{ LastEvaluatedKey }->{ RangeKeyElement }->{ $range_type };
+            }
+        }
+        
+        # cycle through all?
+        if ( $args_ref->{ all } && $next_start_key_ref ) {
+            
+            # make sure we do not run into a loop by comparing last and current start key
+            my $new_start_key = join( ';', map { sprintf( '%s=%s', $_, $next_start_key_ref->{ $_ } ) } sort keys %$next_start_key_ref );
+            my %key_cache     = defined $args_ref->{ _start_key_cache } ? %{ $args_ref->{ _start_key_cache } } : ();
+            #print Dumper( { STARTKEY => $next_start_key_ref, LASTEVAL => $json_ref->{ LastEvaluatedKey }, KEYS => [ \%key_cache, $new_start_key ] } );
+            
+            if ( ! defined $key_cache{ $new_start_key } ) {
+                $key_cache{ $new_start_key } = 1;
+                
+                # perform sub-query
+                my ( $sub_count, $sub_res_ref ) = $self->query_items( $table_orig, $filter_ref, {
+                    %$args_ref,
+                    _start_key_cache => \%key_cache,
+                    start_key        => $next_start_key_ref
+                } );
+                #print Dumper( { SUB_COUNT => $sub_count } );
+                
+                # add result
+                if ( $sub_count ) {
+                    $count += $sub_count;
+                    push @res, @$sub_res_ref;
+                }
+            }
+        }
+        
+        return wantarray ? ( $count, \@res, $next_start_key_ref ) : \@res;
     }
     
     # error
@@ -1242,12 +1329,14 @@ Main difference to query_items: A whole table scan is performed, which is much s
 
 sub scan_items {
     my ( $self, $table, $filter_ref, $args_ref ) = @_;
+    my $table_orig = $table;
     $table = $self->_table_name( $table );
     $args_ref ||= {
         limit       => undef,   # amount of items
         start_key   => undef,   # eg { hash_key => 1, range_key => "bla" }
         attributes  => undef,   # eq [ qw/ attrib1 attrib2 / ]
         count       => 0,       # returns amount instead of the actual result
+        all         => 0,       # read all entries (runs possibly multiple queries)
     };
     
     # check definition
@@ -1294,7 +1383,7 @@ sub scan_items {
     
     # with start key?
     if( defined( my $start_key_ref = $args_ref->{ start_key } ) ) {
-        $self->_check_keys( "query_items: start_key", $table, $start_key_ref );
+        $self->_check_keys( "scan_items: start_key", $table, $start_key_ref );
         my $e_ref = $query{ ExclusiveStartKey } = {};
         
         # add hash key
@@ -1312,7 +1401,7 @@ sub scan_items {
     
     # only certain attributes
     if ( defined( my $attribs_ref = $args_ref->{ attributes } ) ) {
-        my @keys = $self->_check_keys( "query_items: attributes", $table, $attribs_ref );
+        my @keys = $self->_check_keys( "scan_items: attributes", $table, $attribs_ref );
         $query{ AttributesToGet } = \@keys;
     }
     
@@ -1330,7 +1419,53 @@ sub scan_items {
         foreach my $from_ref( @{ $json_ref->{ Items } } ) {
             push @res, $self->_format_item( $table, $from_ref );
         }
-        return wantarray ? ( $json_ref->{ Count }, \@res ) : \@res;
+        
+        my $count = $json_ref->{ Count };
+        
+        # build start key for return or use
+        my $next_start_key_ref;
+        if ( defined $json_ref->{ LastEvaluatedKey } ) {
+            $next_start_key_ref = {};
+            
+            # add hash key to start key
+            my $hash_type = $self->_attrib_type( $table, $table_ref->{ hash_key } );
+            $next_start_key_ref->{ $table_ref->{ hash_key } } = $json_ref->{ LastEvaluatedKey }->{ HashKeyElement }->{ $hash_type };
+            
+            # add range key to start key
+            if ( defined $table_ref->{ range_key } && defined $json_ref->{ LastEvaluatedKey }->{ RangeKeyElement } ) {
+                my $range_type = $self->_attrib_type( $table, $table_ref->{ range_key } );
+                $next_start_key_ref->{ $table_ref->{ range_key } } = $json_ref->{ LastEvaluatedKey }->{ RangeKeyElement }->{ $range_type };
+            }
+        }
+        
+        # cycle through all?
+        if ( $args_ref->{ all } && $next_start_key_ref ) {
+            
+            # make sure we do not run into a loop by comparing last and current start key
+            my $new_start_key = join( ';', map { sprintf( '%s=%s', $_, $next_start_key_ref->{ $_ } ) } sort keys %$next_start_key_ref );
+            my %key_cache     = defined $args_ref->{ _start_key_cache } ? %{ $args_ref->{ _start_key_cache } } : ();
+            #print Dumper( { STARTKEY => $next_start_key_ref, LASTEVAL => $json_ref->{ LastEvaluatedKey }, KEYS => [ \%key_cache, $new_start_key ] } );
+            
+            if ( ! defined $key_cache{ $new_start_key } ) {
+                $key_cache{ $new_start_key } = 1;
+                
+                # perform sub-query
+                my ( $sub_count, $sub_res_ref ) = $self->scan_items( $table_orig, $filter_ref, {
+                    %$args_ref,
+                    _start_key_cache => \%key_cache,
+                    start_key        => $next_start_key_ref
+                } );
+                #print Dumper( { SUB_COUNT => $sub_count } );
+                
+                # add result
+                if ( $sub_count ) {
+                    $count += $sub_count;
+                    push @res, @$sub_res_ref;
+                }
+            }
+        }
+        
+        return wantarray ? ( $count, \@res, $next_start_key_ref ) : \@res;
     }
     
     # error
@@ -1390,14 +1525,25 @@ sub request {
     # .. add content
     $request->content( $json );
     
-    # run request
-    my $response = $self->lwp->request( $request );
-    $ENV{ DYNAMO_DB_DEBUG } && warn Dumper( $response );
+    my ( $json_ref, $response );
+    my $tries = $self->max_retries + 1;
+    while( 1 ) {
+        
+        # run request
+        $response = $self->lwp->request( $request );
+        $ENV{ DYNAMO_DB_DEBUG } && warn Dumper( $response );
+        
+        # get json
+        $json_ref = $response
+            ? eval { $self->json->decode( $response->decoded_content ) } || { error => "Failed to parse JSON result" }
+            : { error => "Failed to get result" };
+        if ( defined $json_ref->{ __type } && $json_ref->{ __type } =~ /ProvisionedThroughputExceededException/ && $tries-- > 0 ) {
+            usleep( $self->retry_timeout * 1_000_000 );
+            next;
+        }
+        last;
+    }
     
-    # get json
-    my $json_ref = $response
-        ? eval { $self->json->decode( $response->decoded_content ) } || { error => "Failed to parse JSON result" }
-        : { error => "Failed to get result" };
     
     # handle error
     if ( defined $json_ref->{ error } && $json_ref->{ error } ) {

@@ -22,6 +22,7 @@ WriteMakefile(
     'LWP::UserAgent' => 0,
     'Net::Amazon::AWSSign' => 0,
     'XML::Simple' => 0,
+    'Time::HiRes' => 0,
     Moose => 1.0
   },
   test => {TESTS => 't/*.t t/*/*.t'}

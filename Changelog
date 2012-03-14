@@ -1,2 +1,6 @@
-0.14	2012-03-11
+0.1.5	2012-03-14
+	* Can now retry requests, if limit exceeded
+	* Can now iterate through query/scan results automatically to retreive all "pages"
+
+0.1.4	2012-03-11
 	* Improvided error handling
