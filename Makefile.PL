@@ -23,6 +23,7 @@ WriteMakefile(
     'Net::Amazon::AWSSign' => 0,
     'XML::Simple' => 0,
     'Time::HiRes' => 0,
+    'LWP::Protocol::https' => 0,
     Moose => 1.0
   },
   test => {TESTS => 't/*.t t/*/*.t'}
