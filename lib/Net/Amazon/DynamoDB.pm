@@ -63,7 +63,7 @@ See L<https://github.com/ukautz/Net-Amazon-DynamoDB> for latest release.
 use Moose;
 
 use v5.10;
-use version 0.74; our $VERSION = qv( "v0.1.6" );
+use version 0.74; our $VERSION = qv( "v0.1.7" );
 
 use DateTime::Format::HTTP;
 use DateTime;
@@ -1527,7 +1527,10 @@ sub request {
     my ( $self, $target, $json ) = @_;
     
     # assure security token existing
-    $self->_init_security_token();
+    unless( $self->_init_security_token() ) {
+        my %error = ( error => $self->error() );
+        return wantarray ? ( undef, 0, \%error ) : \%error;
+    }
     
     # convert to string, if required
     $json = $self->json->encode( $json ) if ref $json;
@@ -1611,8 +1614,8 @@ Get/set last error
 
 sub error {
     my ( $self, $str ) = @_;
-    croak $str if $self->raise_error();
     if ( $str ) {
+        croak $str if $self->raise_error();
         $self->_error( $str );
     }
     return $self->_error if $self->_has_error;
@@ -1629,7 +1632,7 @@ sub error {
 sub _init_security_token {
     my ( $self ) = @_;
     
-    return if $self->_has_credentials();
+    return 1 if $self->_has_credentials();
     
     # build aws signed request
     $self->_aws_signer( Net::Amazon::AWSSign->new(
@@ -1642,7 +1645,8 @@ sub _init_security_token {
     
     # got response
     if ( $res->is_success) {
-        my $result_ref = XMLin( $res->decoded_content );
+        my $content = $res->decoded_content;
+        my $result_ref = XMLin( $content );
         
         # got valid result
         if( ref $result_ref && defined $result_ref->{ GetSessionTokenResult }
@@ -1650,9 +1654,27 @@ sub _init_security_token {
             && defined $result_ref->{ GetSessionTokenResult }->{ Credentials }
         ) {
             # SessionToken, AccessKeyId, Expiration, SecretAccessKey
-            $self->_credentials( $result_ref->{ GetSessionTokenResult }->{ Credentials } )
+            my $check_ok = 0;
+            my $cred_ref = $result_ref->{ GetSessionTokenResult }->{ Credentials };
+            if ( ref( $cred_ref ) 
+                && defined $cred_ref->{ SessionToken }
+                && defined $cred_ref->{ AccessKeyId }
+                && defined $cred_ref->{ SecretAccessKey }
+            ) {
+                $self->_credentials( $cred_ref );
+                return 1;
+            }
+        }
+        else {
+            $self->error( "Failed to fetch credentials: ". $res->stats_line. " ($content)" );
         }
     }
+    else {
+        my $content = eval { $res->decoded_content } || "No Content";
+        $self->error( "Failed to fetch credentials: ". $res->stats_line. " ($content)" );
+    }
+    
+    return 0;
 }
 
 
