@@ -63,7 +63,7 @@ See L<https://github.com/ukautz/Net-Amazon-DynamoDB> for latest release.
 use Moose;
 
 use v5.10;
-use version 0.74; our $VERSION = qv( "v0.1.8" );
+use version 0.74; our $VERSION = qv( "v0.1.9" );
 
 use DateTime::Format::HTTP;
 use DateTime;
@@ -1667,7 +1667,6 @@ sub _init_security_token {
             && defined $result_ref->{ GetSessionTokenResult }->{ Credentials }
         ) {
             # SessionToken, AccessKeyId, Expiration, SecretAccessKey
-            my $check_ok = 0;
             my $cred_ref = $result_ref->{ GetSessionTokenResult }->{ Credentials };
             if ( ref( $cred_ref ) 
                 && defined $cred_ref->{ SessionToken }
@@ -1690,12 +1689,12 @@ sub _init_security_token {
             }
         }
         else {
-            $self->error( "Failed to fetch credentials: ". $res->stats_line. " ($content)" );
+            $self->error( "Failed to fetch credentials: ". $res->status_line. " ($content)" );
         }
     }
     else {
         my $content = eval { $res->decoded_content } || "No Content";
-        $self->error( "Failed to fetch credentials: ". $res->stats_line. " ($content)" );
+        $self->error( "Failed to fetch credentials: ". $res->status_line. " ($content)" );
     }
     
     return 0;
