@@ -1,3 +1,11 @@
+0.1.8	2012-03-18
+	* Check expiration of credentials
+	* Added DateTime modules to build requirements
+
+0.1.7	2012-03-17
+	* Handle error in fetching credentials
+	* Added LWP::Protocol::https to build requirements
+
 0.1.5	2012-03-14
 	* Can now retry requests, if limit exceeded
 	* Can now iterate through query/scan results automatically to retreive all "pages"

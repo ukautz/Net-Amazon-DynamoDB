@@ -63,7 +63,7 @@ See L<https://github.com/ukautz/Net-Amazon-DynamoDB> for latest release.
 use Moose;
 
 use v5.10;
-use version 0.74; our $VERSION = qv( "v0.1.7" );
+use version 0.74; our $VERSION = qv( "v0.1.8" );
 
 use DateTime::Format::HTTP;
 use DateTime;
@@ -76,6 +76,8 @@ use XML::Simple qw/ XMLin /;
 use Data::Dumper;
 use Carp qw/ croak /;
 use Time::HiRes qw/ usleep /;
+use DateTime;
+use DateTime::Format::Strptime;
 
 =head1 CLASS ATTRIBUTES
 
@@ -246,6 +248,13 @@ has _security_token_url => ( isa => 'Str', is => 'rw', default => 'https://sts.a
 #
 
 has _credentials => ( isa => 'HashRef[Str]', is => 'rw', predicate => '_has_credentials' );
+
+#
+# _credentials_expire
+#   Time of credentials exiration
+#
+
+has _credentials_expire => ( isa => 'DateTime', is => 'rw' );
 
 #
 # _error
@@ -1632,7 +1641,11 @@ sub error {
 sub _init_security_token {
     my ( $self ) = @_;
     
-    return 1 if $self->_has_credentials();
+    # wheter has valid credentials
+    if ( $self->_has_credentials() ) {
+        my $dt = DateTime->now( time_zone => 'local' )->add( seconds => 5 );
+        return 1 if $dt < $self->_credentials_expire;
+    }
     
     # build aws signed request
     $self->_aws_signer( Net::Amazon::AWSSign->new(
@@ -1660,7 +1673,18 @@ sub _init_security_token {
                 && defined $cred_ref->{ SessionToken }
                 && defined $cred_ref->{ AccessKeyId }
                 && defined $cred_ref->{ SecretAccessKey }
+                && defined $cred_ref->{ Expiration }
             ) {
+                # parse expiration date
+                my $pattern = DateTime::Format::Strptime->new(
+                    pattern   => '%FT%T',
+                    time_zone => 'UTC'
+                );
+                my $expire = $pattern->parse_datetime( $cred_ref->{ Expiration } );
+                $expire->set_time_zone( 'local' );
+                $self->_credentials_expire( $expire );
+                
+                # set credentials
                 $self->_credentials( $cred_ref );
                 return 1;
             }

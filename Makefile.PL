@@ -24,6 +24,10 @@ WriteMakefile(
     'XML::Simple' => 0,
     'Time::HiRes' => 0,
     'LWP::Protocol::https' => 0,
+    'DateTime' => 0,
+    'DateTime::TimeZone' => 0,
+    'DateTime::TimeZone::Local' => 0,
+    'DateTime::Format::Strptime' => 0,
     Moose => 1.0
   },
   test => {TESTS => 't/*.t t/*/*.t'}
