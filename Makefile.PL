@@ -14,20 +14,19 @@ WriteMakefile(
       'Test::More' => 0
   },
   PREREQ_PM        => {
-    'DateTime::Format::HTTP' => 0,
     'DateTime' => 0,
+    'DateTime::Format::HTTP' => 0,
+    'DateTime::Format::Strptime' => 0,
+    'DateTime::TimeZone' => 0,
+    'DateTime::TimeZone::Local' => 0,
     'Digest::SHA' => 0,
     'HTTP::Request' => 0,
     'JSON' => 0,
+    'LWP::Protocol::https' => 0,
     'LWP::UserAgent' => 0,
     'Net::Amazon::AWSSign' => 0,
-    'XML::Simple' => 0,
     'Time::HiRes' => 0,
-    'LWP::Protocol::https' => 0,
-    'DateTime' => 0,
-    'DateTime::TimeZone' => 0,
-    'DateTime::TimeZone::Local' => 0,
-    'DateTime::Format::Strptime' => 0,
+    'XML::Simple' => 0,
     Moose => 1.0
   },
   test => {TESTS => 't/*.t t/*/*.t'}

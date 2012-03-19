@@ -63,21 +63,20 @@ See L<https://github.com/ukautz/Net-Amazon-DynamoDB> for latest release.
 use Moose;
 
 use v5.10;
-use version 0.74; our $VERSION = qv( "v0.1.9" );
+use version 0.74; our $VERSION = qv( "v0.1.10" );
 
+use Carp qw/ croak /;
+use Data::Dumper;
 use DateTime::Format::HTTP;
+use DateTime::Format::Strptime;
 use DateTime;
-use Digest::SHA qw/ sha256 hmac_sha256_base64 /;
+use Digest::SHA qw/ sha1_hex sha256_hex sha384_hex sha256 hmac_sha256_base64 /;
 use HTTP::Request;
 use JSON;
 use LWP::UserAgent;
 use Net::Amazon::AWSSign;
-use XML::Simple qw/ XMLin /;
-use Data::Dumper;
-use Carp qw/ croak /;
 use Time::HiRes qw/ usleep /;
-use DateTime;
-use DateTime::Format::Strptime;
+use XML::Simple qw/ XMLin /;
 
 =head1 CLASS ATTRIBUTES
 
@@ -148,9 +147,13 @@ has lwp => ( isa => 'LWP::UserAgent', is => 'rw', default => sub { LWP::UserAgen
 
 Contains C<JSON> instance for decoding/encoding json.
 
+JSON object needs to support: canonical, allow_nonref and utf8
+
 =cut
 
-has json => ( isa => 'JSON', is => 'rw', default => sub { JSON->new() } );
+has json => ( isa => 'JSON', is => 'rw', default => sub { JSON->new() }, trigger => sub {
+    shift->json->canonical( 1 )->allow_nonref( 1 )->utf8( 1 );
+} );
 
 =head2 host
 
@@ -166,6 +169,8 @@ has host => ( isa => 'Str', is => 'rw', default => 'dynamodb.us-east-1.amazonaws
 
 AWS API access key
 
+Required!
+
 =cut
 
 has access_key => ( isa => 'Str', is => 'rw', required => 1 );
@@ -173,6 +178,8 @@ has access_key => ( isa => 'Str', is => 'rw', required => 1 );
 =head2 secret_key
 
 AWS API secret key
+
+Required!
 
 =cut
 
@@ -206,7 +213,7 @@ Default: 0
 
 =cut
 
-has raise_error => ( isa => 'Bool', is => 'ro', default => 0 );
+has raise_error => ( isa => 'Bool', is => 'rw', default => 0 );
 
 =head2 max_retries
 
@@ -216,7 +223,7 @@ Default: 0 (do only once, no retries)
 
 =cut
 
-has max_retries => ( isa => 'Int', is => 'ro', default => 1 );
+has max_retries => ( isa => 'Int', is => 'rw', default => 1 );
 
 =head2 retry_timeout
 
@@ -226,7 +233,53 @@ Default: 0.1 (100ms)
 
 =cut
 
-has retry_timeout => ( isa => 'Num', is => 'ro', default => 0.1 );
+has retry_timeout => ( isa => 'Num', is => 'rw', default => 0.1 );
+
+=head2 cache
+
+Cache object using L<Cache> interface, eg L<Cache::File> or L<Cache::Memcached>
+
+If set, caching is used for get_item, put_item, update_item and batch_get_item.
+
+Default: -
+
+=cut
+
+has cache => ( isa => 'Cache', is => 'rw', predicate => 'has_cache' );
+
+=head2 cache_disabled
+
+If cache is set, you still can disable it per default and enable it per operation with "use_cache" option (see method documentation)
+This way you have a default no-cache policy, but still can use cache in choosen operations.
+
+Default: 0
+
+=cut
+
+has cache_disabled => ( isa => 'Bool', is => 'rw', default => 0 );
+
+=head2 cache_key_method
+
+Which one to use. Either sha1_hex, sha256_hex, sha384_hex or coderef
+
+Default: sha1_hex
+
+=cut
+
+has cache_key_method => ( is => 'rw', default => sub { \&Digest::SHA::sha1_hex }, trigger => sub {
+    my ( $self, $method ) = @_;
+    if ( ( ref( $method ) ) ne 'CODE' ) {
+        if ( $method eq 'sha1_hex' ) {
+            $self->{ cache_key_method } = \&Digest::SHA::sha1_hex();
+        }
+        elsif ( $method eq 'sha256_hex' ) {
+            $self->{ cache_key_method } = \&Digest::SHA::sha256_hex();
+        }
+        elsif ( $method eq 'sha384_hex' ) {
+            $self->{ cache_key_method } = \&Digest::SHA::sha384_hex();
+        }
+    }
+} );
 
 #
 # _aws_signer
@@ -529,7 +582,7 @@ sub list_tables {
 
 
 
-=head2 put_item $table, $item_ref, [$where_ref], [$return_old]
+=head2 put_item $table, $item_ref, [$where_ref], [$args_ref]
 
 Write a single item to table. All primary keys are required in new item.
 
@@ -568,12 +621,38 @@ Hashref containing the values to be inserted
 
 Filter containing expected values of the (existing) item to be updated
 
-{}
+=item * $args_ref [optional]
+
+HashRef with options
+
+=over
+
+=item * return_old
+
+If true, returns old value
+
+=item * clear_cache
+
+If cache is enabled, clears cache completely, not only the single entry it overwrites
+
+=item * use_cache
+
+If cache is enabled, clears cache completely, not only the single entry it overwrites
+
+=back
+
+=back
 
 =cut
 
 sub put_item {
-    my ( $self, $table, $item_ref, $where_ref, $return_old ) = @_;
+    my ( $self, $table, $item_ref, $where_ref, $args_ref ) = @_;
+    $args_ref ||= {
+        return_old  => 0,
+        clear_cache => 0,
+        no_cache    => 0,
+        use_cache   => 0
+    };
     $table = $self->_table_name( $table );
     
     # check definition
@@ -616,14 +695,27 @@ sub put_item {
     }
     
     # add return value, if set
-    $put{ ReturnValues } = 'ALL_OLD' if $return_old;
+    $put{ ReturnValues } = 'ALL_OLD' if $args_ref->{ return_old };
     
     # perform create
     my ( $res, $res_ok, $json_ref ) = $self->request( PutItem => \%put );
     
     # get result
     if ( $res_ok ) {
-        if ( $return_old ) {
+        
+        # clear cache
+        if ( $self->_cache_enabled( $args_ref ) ) {
+            if ( $args_ref->{ clear_cache } ) {
+                $self->cache->clear();
+            }
+            else {
+                my $cache_key = $self->_cache_key_single( $table, $item_ref );
+                warn "CACHE REMOVE '$cache_key'\n";
+                $self->cache->remove( $cache_key );
+            }
+        }
+        
+        if ( $args_ref->{ return_old } ) {
             return defined $json_ref->{ Attributes }
                 ? $self->_format_item( $table, $json_ref->{ Attributes } )
                 : undef;
@@ -640,7 +732,7 @@ sub put_item {
 
 
 
-=head2 update_item $table, $update_ref, $where_ref, [$return_old]
+=head2 update_item $table, $update_ref, $where_ref, [$args_ref]
 
 Update existing item in database. All primary keys are required in where clause
 
@@ -696,12 +788,38 @@ Hashref containing the updates.
 
 =item * $where_ref [optional]
 
-Filter 
+Filter HashRef
+
+=item * $args_ref [optional]
+
+HashRef of options
+
+=over
+
+=item * return_mode
+
+Can be set to on of "ALL_OLD", "UPDATED_OLD", "ALL_NEW", "UPDATED_NEW"
+
+=item * clear_cache
+
+If cache enabled: Clears cache completely, not only the one entry.
+
+=back
+
+=back
+
+
 
 =cut
 
 sub update_item {
-    my ( $self, $table, $update_ref, $where_ref, $return_mode ) = @_;
+    my ( $self, $table, $update_ref, $where_ref, $args_ref ) = @_;
+    $args_ref ||= {
+        return_mode => '',
+        clear_cache => 0,
+        no_cache    => 0,
+        use_cache   => 0
+    };
     $table = $self->_table_name( $table );
     
     # check definition
@@ -794,9 +912,9 @@ sub update_item {
     }
     
     # add return value, if set
-    if ( $return_mode ) {
-        $update{ ReturnValues } = "$return_mode" =~ /^(?:ALL_OLD|UPDATED_OLD|ALL_NEW|UPDATED_NEW)$/i
-            ? uc( $return_mode )
+    if ( $args_ref->{ return_mode } ) {
+        $update{ ReturnValues } = "$args_ref->{ return_mode }" =~ /^(?:ALL_OLD|UPDATED_OLD|ALL_NEW|UPDATED_NEW)$/i
+            ? uc( $args_ref->{ return_mode } )
             : "ALL_OLD";
     }
     
@@ -805,7 +923,20 @@ sub update_item {
     
     # get result
     if ( $res_ok ) {
-        if ( $return_mode ) {
+        
+        # clear cache
+        if ( $self->_cache_enabled( $args_ref ) ) {
+            if ( $args_ref->{ clear_cache } ) {
+                $self->cache->clear();
+            }
+            else {
+                my $cache_key = $self->_cache_key_single( $table, $where_ref );
+                warn "CACHE REMOVE '$cache_key'\n";
+                $self->cache->remove( $cache_key );
+            }
+        }
+        
+        if ( $args_ref->{ return_mode } ) {
             return defined $json_ref->{ Attributes }
                 ? $self->_format_item( $table, $json_ref->{ Attributes } )
                 : undef;
@@ -840,6 +971,54 @@ Read a single item by hash (and range) key.
     } );
     print "Got $item2->{ attrib1 }\n";
 
+=over 
+
+=item * $table
+
+Name of the table
+
+=item * $pk_ref
+
+HashRef containing all primary keys
+
+    # only hash key
+    {
+        $hash_key => $hash_value
+    }
+    
+    # hash and range key
+    {
+        $hash_key => $hash_value,
+        $range_key => $range_value
+    }
+
+
+=item * $args_ref [optional]
+
+HashRef of options
+
+=over
+
+=item * consistent
+
+Whether read shall be consistent. If set to 0 and read_consistent is globally enabled, this read will not be consistent
+
+=item * attributes
+
+ArrayRef of attributes to read. If not set, all attributes are returned.
+
+=item * no_cache
+
+If cache enabled: Do not use cache for this 
+
+=item * use_cache
+
+If cache set, but per default disabled: Use cache for this read
+
+=back
+
+=back
+
 =cut
 
 sub get_item {
@@ -847,7 +1026,9 @@ sub get_item {
     $table = $self->_table_name( $table );
     $args_ref ||= {
         consistent => undef,
-        attributes => undef
+        attributes => undef,
+        no_cache   => 0,
+        use_cache  => 0
     };
     $args_ref->{ consistent } //= $self->read_consistent;
     
@@ -863,6 +1044,17 @@ sub get_item {
             defined $pk_ref->{ $table_ref->{ range_key } }
             && length( $pk_ref->{ $table_ref->{ hash_key } } )
         );
+    
+    # use cache
+    my $use_cache = $self->_cache_enabled( $args_ref );
+    my $cache_key;
+    if ( $use_cache ) {
+        $cache_key = $self->_cache_key_single( $table, $pk_ref );
+        my $cached = $self->cache->thaw( $cache_key );
+        warn "CACHED READ '$cache_key'\n" if $cached;
+        return $cached if defined $cached;
+    }
+    
     
     # build get
     my %get = (
@@ -889,7 +1081,12 @@ sub get_item {
     my ( $res, $res_ok, $json_ref ) = $self->request( GetItem => \%get );
     
     # return on success
-    return $self->_format_item( $table, $json_ref->{ Item } ) if $res_ok && defined $json_ref->{ Item };
+    my $item_ref = $self->_format_item( $table, $json_ref->{ Item } ) if $res_ok && defined $json_ref->{ Item };
+    if ( $use_cache ) {
+        $self->cache->freeze( $cache_key, $item_ref );
+        warn "CACHE WRITE '$cache_key'\n";
+    }
+    return $item_ref;
     
     # return on success, but nothing received
     return undef if $res_ok;
@@ -930,7 +1127,12 @@ Read multiple items (possible accross multiple tables) identified by their hash 
 =cut
 
 sub batch_get_item {
-    my ( $self, $tables_ref ) = @_;
+    my ( $self, $tables_ref, $args_ref ) = @_;
+    $args_ref ||= {
+        no_cache  => 0,
+        use_cache => 0
+    };
+    
     
     # check definition
     my %table_map;
@@ -1075,6 +1277,14 @@ sub delete_item {
     my ( $res, $res_ok, $json_ref ) = $self->request( DeleteItem => \%delete );
     
     if ( $res_ok ) {
+        
+        # use cache
+        if ( $self->_cache_enabled( $args_ref ) ) {
+            my $cache_key = $self->_cache_key_single( $table, $where_ref );
+            warn "CACHE REMOVE '$cache_key'\n";
+            $self->cache->remove( $cache_key );
+        }
+        
         if ( defined $json_ref->{ Attributes } ) {
             my %res;
             foreach my $attrib( $self->_attribs( $table ) ) {
@@ -1885,6 +2095,40 @@ sub _extract_error_message {
     else {
         $msg = 'No response received. DynamoDB down?'
     }
+}
+
+#
+# _cache_enabled
+#
+
+sub _cache_enabled {
+    my ( $self, $args_ref ) = @_;
+    return $self->has_cache && ! $args_ref->{ no_cache }
+        && ( $args_ref->{ use_cache } || ! $self->cache_disabled );
+}
+
+#
+# _cache_key_single
+#
+
+sub _cache_key_single {
+    my ( $self, $table, $hash_ref ) = @_;
+    my $table_ref = $self->_check_table( $table );
+    my @keys = ( $table_ref->{ hash_key } );
+    push @keys, $table_ref->{ range_key } if defined $table_ref->{ range_key };
+    my %pk = map { ( $_ => $hash_ref->{ $_ } || '' ) } @keys;
+    return $self->_cache_key( $table, 'single', \%pk );
+}
+
+#
+# _cache_key
+#
+
+sub _cache_key {
+    my ( $self, $table, $name, $id_ref ) = @_;
+    my $method = $self->cache_key_method();
+    warn "CACHE KEY FROM $table ($name) = ". $self->json->encode( $id_ref ). "\n";
+    return sprintf( '%s-%s-%s', $table, $name, $method->( $self->json->encode( $id_ref ) ) );
 }
 
 __PACKAGE__->meta->make_immutable;
