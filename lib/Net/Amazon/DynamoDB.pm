@@ -631,13 +631,13 @@ HashRef with options
 
 If true, returns old value
 
-=item * clear_cache
+=item * no_cache
 
-If cache is enabled, clears cache completely, not only the single entry it overwrites
+Force not using cache, if enabled per default
 
 =item * use_cache
 
-If cache is enabled, clears cache completely, not only the single entry it overwrites
+Force using cache, if disabled per default but setupped
 
 =back
 
@@ -649,7 +649,6 @@ sub put_item {
     my ( $self, $table, $item_ref, $where_ref, $args_ref ) = @_;
     $args_ref ||= {
         return_old  => 0,
-        clear_cache => 0,
         no_cache    => 0,
         use_cache   => 0
     };
@@ -705,14 +704,8 @@ sub put_item {
         
         # clear cache
         if ( $self->_cache_enabled( $args_ref ) ) {
-            if ( $args_ref->{ clear_cache } ) {
-                $self->cache->clear();
-            }
-            else {
-                my $cache_key = $self->_cache_key_single( $table, $item_ref );
-                warn "CACHE REMOVE '$cache_key'\n";
-                $self->cache->remove( $cache_key );
-            }
+            my $cache_key = $self->_cache_key_single( $table, $item_ref );
+            $self->cache->remove( $cache_key );
         }
         
         if ( $args_ref->{ return_old } ) {
@@ -800,15 +793,17 @@ HashRef of options
 
 Can be set to on of "ALL_OLD", "UPDATED_OLD", "ALL_NEW", "UPDATED_NEW"
 
-=item * clear_cache
+=item * no_cache
 
-If cache enabled: Clears cache completely, not only the one entry.
+Force not using cache, if enabled per default
+
+=item * use_cache
+
+Force using cache, if disabled per default but setupped
 
 =back
 
 =back
-
-
 
 =cut
 
@@ -816,7 +811,6 @@ sub update_item {
     my ( $self, $table, $update_ref, $where_ref, $args_ref ) = @_;
     $args_ref ||= {
         return_mode => '',
-        clear_cache => 0,
         no_cache    => 0,
         use_cache   => 0
     };
@@ -926,14 +920,8 @@ sub update_item {
         
         # clear cache
         if ( $self->_cache_enabled( $args_ref ) ) {
-            if ( $args_ref->{ clear_cache } ) {
-                $self->cache->clear();
-            }
-            else {
-                my $cache_key = $self->_cache_key_single( $table, $where_ref );
-                warn "CACHE REMOVE '$cache_key'\n";
-                $self->cache->remove( $cache_key );
-            }
+            my $cache_key = $self->_cache_key_single( $table, $where_ref );
+            $self->cache->remove( $cache_key );
         }
         
         if ( $args_ref->{ return_mode } ) {
@@ -1009,11 +997,11 @@ ArrayRef of attributes to read. If not set, all attributes are returned.
 
 =item * no_cache
 
-If cache enabled: Do not use cache for this 
+Force not using cache, if enabled per default
 
 =item * use_cache
 
-If cache set, but per default disabled: Use cache for this read
+Force using cache, if disabled per default but setupped
 
 =back
 
@@ -1051,7 +1039,6 @@ sub get_item {
     if ( $use_cache ) {
         $cache_key = $self->_cache_key_single( $table, $pk_ref );
         my $cached = $self->cache->thaw( $cache_key );
-        warn "CACHED READ '$cache_key'\n" if $cached;
         return $cached if defined $cached;
     }
     
@@ -1084,7 +1071,6 @@ sub get_item {
     my $item_ref = $self->_format_item( $table, $json_ref->{ Item } ) if $res_ok && defined $json_ref->{ Item };
     if ( $use_cache ) {
         $self->cache->freeze( $cache_key, $item_ref );
-        warn "CACHE WRITE '$cache_key'\n";
     }
     return $item_ref;
     
@@ -1098,7 +1084,7 @@ sub get_item {
 
 
 
-=head2 batch_get_item
+=head2 batch_get_item $tables_ref
 
 Read multiple items (possible accross multiple tables) identified by their hash and range key (if required).
 
@@ -1124,14 +1110,20 @@ Read multiple items (possible accross multiple tables) identified by their hash 
         }
     }
 
+=over
+
+=item $tables_ref
+
+HashRef of tablename => primary key ArrayRef
+
+=back
+
+
 =cut
 
 sub batch_get_item {
     my ( $self, $tables_ref, $args_ref ) = @_;
-    $args_ref ||= {
-        no_cache  => 0,
-        use_cache => 0
-    };
+    $args_ref ||= {};
     
     
     # check definition
@@ -1214,18 +1206,55 @@ sub batch_get_item {
 
 
 
-=head2 delete_item
+=head2 delete_item $table, $where_ref, [$args_ref]
 
 Deletes a single item by primary key (hash or hash+range key). 
 
     # only with hash key
-    
+
+=over
+
+=item * $table
+
+Name of the table
+
+=item * $where_ref
+
+HashRef containing at least primary key. Can also contain additional attribute filters
+
+=item * $args_ref [optional]
+
+HashRef containing options
+
+=over
+
+=item * return_old
+
+Bool whether return old, just deleted item or not
+
+Default: 0
+
+=item * no_cache
+
+Force not using cache, if enabled per default
+
+=item * use_cache
+
+Force using cache, if disabled per default but setupped
+
+=back
+
+=back
 
 =cut
 
 sub delete_item {
     my ( $self, $table, $where_ref, $args_ref ) = @_;
-    $args_ref ||= { return_old => 0 };
+    $args_ref ||= {
+        return_old => 0,
+        no_cache   => 0,
+        use_cache  => 0
+    };
     $table = $self->_table_name( $table );
     
     # check definition
@@ -1281,7 +1310,6 @@ sub delete_item {
         # use cache
         if ( $self->_cache_enabled( $args_ref ) ) {
             my $cache_key = $self->_cache_key_single( $table, $where_ref );
-            warn "CACHE REMOVE '$cache_key'\n";
             $self->cache->remove( $cache_key );
         }
         
@@ -2127,7 +2155,6 @@ sub _cache_key_single {
 sub _cache_key {
     my ( $self, $table, $name, $id_ref ) = @_;
     my $method = $self->cache_key_method();
-    warn "CACHE KEY FROM $table ($name) = ". $self->json->encode( $id_ref ). "\n";
     return sprintf( '%s-%s-%s', $table, $name, $method->( $self->json->encode( $id_ref ) ) );
 }
 

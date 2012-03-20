@@ -7,7 +7,9 @@ use FindBin qw/ $Bin /;
 use Data::Dumper;
 use lib "$Bin/../lib";
 use Net::Amazon::DynamoDB;
-use Cache::File;
+#use Cache::File;
+use Cache::Memory;
+use Time::HiRes qw/ gettimeofday tv_interval /;
 
 $| = 1;
 
@@ -19,7 +21,8 @@ my $ddb = Net::Amazon::DynamoDB->new(
     access_key => $ENV{ AWS_ACCESS_KEY_ID },
     secret_key => $ENV{ AWS_SECRET_ACCESS_KEY },
     namespace  => 'dings_',
-    cache      => Cache::File->new( cache_root => '/tmp/testcache', default_expires => '60 sec' ),
+    cache      => Cache::Memory->new( default_expires => '60 sec' ),
+        #Cache::File->new( cache_root => '/tmp/testcache', default_expires => '60 sec' ),
     tables     => {
         $table => {
             hash_key  => 'hid',
@@ -51,27 +54,27 @@ $ddb->put_item( $table => {
     str_array => [ "bla $_" ],
     num_array => [ $_ ** 2 ]
 } ) for 1..10;
-print " OK\n";
+print " OK - cache invalid\n";
 
 print "Get items 1 ";
-my $start = time();
+my $start = [ gettimeofday() ];
 $ddb->get_item( $table => {
     hid       => 'something'. $_,
     str_array => [ "bla $_" ],
     num_array => [ $_ ** 2 ]
 } ) for 1..10;
-my $end = time();
-print " OK (". ( $end - $start ). " secs)\n";
+my $end = [ gettimeofday() ];
+print " OK (uncached: ". tv_interval( $start, $end ). " secs)\n";
 
 print "Get items 2 ";
-$start = time();
+$start = [ gettimeofday() ];
 $ddb->get_item( $table => {
     hid       => 'something'. $_,
     str_array => [ "bla $_" ],
     num_array => [ $_ ** 2 ]
 } ) for 1..10;
-$end = time();
-print " OK (". ( $end - $start ). " secs)\n";
+$end = [ gettimeofday() ];
+print " OK (cached: ". tv_interval( $start, $end ). " secs)\n";
 
 print "Put items 2";
 $ddb->put_item( $table => {
@@ -79,25 +82,25 @@ $ddb->put_item( $table => {
     str_array => [ "bla $_" ],
     num_array => [ $_ ** 2 ]
 } ) for 1..10;
-print " OK\n";
+print " OK - cache invalid\n";
 
 print "Get items 3 ";
-$start = time();
+$start = [ gettimeofday() ];
 $ddb->get_item( $table => {
     hid       => 'something'. $_,
     str_array => [ "bla $_" ],
     num_array => [ $_ ** 2 ]
 } ) for 1..10;
-$end = time();
-print " OK (". ( $end - $start ). " secs)\n";
+$end = [ gettimeofday() ];
+print " OK (uncached: ". tv_interval( $start, $end ). " secs)\n";
 
 print "Get items 4 ";
-$start = time();
+$start = [ gettimeofday() ];
 $ddb->get_item( $table => {
     hid       => 'something'. $_,
     str_array => [ "bla $_" ],
     num_array => [ $_ ** 2 ]
 } ) for 1..10;
-$end = time();
-print " OK (". ( $end - $start ). " secs)\n";
+$end = [ gettimeofday() ];
+print " OK (cached: ". tv_interval( $start, $end ). " secs)\n";
 

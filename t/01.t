@@ -3,31 +3,45 @@
 
 use strict;
 use warnings;
-use Test::More tests => 3;
+use Test::More tests => 4;
 use FindBin qw/ $Bin /;
 use Data::Dumper;
 use lib "$Bin/../lib";
 
 use_ok( "Net::Amazon::DynamoDB" );
+use_ok( 'Cache::Memory' );
 
 SKIP: {
     
-    skip 'No AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY set in ENV. Not running any tests.', 2
+    skip "No AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY set in ENV. Not running any tests.\n"
+        ."CAUTION: Tests require to create new tables which will cost you money!!", 2
         unless defined $ENV{ AWS_ACCESS_KEY_ID } && defined $ENV{ AWS_SECRET_ACCESS_KEY };
     my $table_prefix = $ENV{ AWS_TEST_TABLE_PREFIX } || 'test_';
     
-    foreach my $namespace( '', 'something_' ) {
+    my @tests = (
+        {
+            namespace => '',
+        },
+        {
+            namespace => 'cached_',
+            cache     => Cache::Memory->new(),
+        }
+    );
+    
+    foreach my $test_ref( @tests ) {
         
-        subtest( 'Online Tests [namespace:"'. $namespace. '"]' => sub {
+        subtest( 'Online Tests ['. join( ', ', map {
+            sprintf( '%s: %s', $_, defined $test_ref->{ $_ } && $test_ref->{ $_ } ? 'yes' : 'no' );
+        } qw/ namespace cache / ). ']' => sub {
             
             my $table1 = $table_prefix. 'table1';
             my $table2 = $table_prefix. 'table2';
             
             # create ddb
             my $ddb = eval { Net::Amazon::DynamoDB->new(
+                %$test_ref,
                 access_key  => $ENV{ AWS_ACCESS_KEY_ID },
                 secret_key  => $ENV{ AWS_SECRET_ACCESS_KEY },
-                namespace   => $namespace,
                 raise_error => 1,
                 tables      => {
                     $table1 => {
@@ -85,7 +99,9 @@ SKIP: {
             ok( $read_ref && $read_ref->{ id } == 1 && $read_ref->{ name } eq 'First entry', "First entry from $table1 read" );
             
             # update test
-            my $update_ref = $ddb->update_item( $table1 => { name => "Updated first entry" }, { id => 1 }, 'ALL_NEW' );
+            my $update_ref = $ddb->update_item( $table1 => { name => "Updated first entry" }, { id => 1 }, {
+                return_mode => 'ALL_NEW'
+            } );
             ok( $update_ref && $update_ref->{ name } eq 'Updated first entry', "Update in $table1 ok" );
             
             # create multiple in table1
