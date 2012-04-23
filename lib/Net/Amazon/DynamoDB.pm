@@ -63,7 +63,7 @@ See L<https://github.com/ukautz/Net-Amazon-DynamoDB> for latest release.
 use Moose;
 
 use v5.10;
-use version 0.74; our $VERSION = qv( "v0.1.10" );
+use version 0.74; our $VERSION = qv( "v0.1.11" );
 
 use Carp qw/ croak /;
 use Data::Dumper;
@@ -184,6 +184,16 @@ Required!
 =cut
 
 has secret_key => ( isa => 'Str', is => 'rw', required => 1 );
+
+=head2 api_version
+
+AWS API Version. Use format "YYYYMMDD"
+
+Default: 20111205
+
+=cut
+
+has api_version => ( isa => 'Str', is => 'rw', default => '20111205' );
 
 =head2 read_consistent
 
@@ -467,6 +477,7 @@ sub describe_table {
     # got result
     if ( $res_ok ) {
         if ( defined $json_ref->{ Table } ) {
+            no warnings 'uninitialized';
             return {
                 existing      => 1,
                 size          => $json_ref->{ Table }->{ TableSizeBytes },
@@ -724,6 +735,166 @@ sub put_item {
 }
 
 
+=head2 batch_write_item $tables_ref, [$args_ref]
+
+Batch put / delete items into one ore more tables.
+
+Caution: Each batch put / delete cannot process more operations than you have write capacity for the table.
+
+Example:
+
+    my ( $ok, $unprocessed_count, $next_query_ref ) = $ddb->batch_write_item( {
+        table_name => {
+            put => [
+                {
+                    attrib1 => "Value 1",
+                    attrib2 => "Value 2",
+                },
+                # { .. } ..
+            ],
+            delete => [
+                {
+                    hash_key => "Hash Key Value",
+                    range_key => "Range Key Value",
+                },
+                # { .. } ..
+            ]
+        },
+        # table2_name => ..
+    } );
+    
+    if ( $ok ) {
+        if ( $unprocessed_count ) {
+            print "Ok, but $unprocessed_count still not processed\n";
+            $ddb->batch_write_item( $next_query_ref );
+        }
+        else {
+            print "All processed\n";
+        }
+    }
+
+=over
+
+=item $tables_ref
+
+HashRef in the form
+
+    { table_name => { put => [ { attribs }, .. ], delete => [ { primary keys } ] } }
+
+=item $args_ref
+
+HashRef
+
+=over
+
+=item * process_all
+
+Keep processing everything which is returned as unprocessed (if you send more operations than your
+table has write capability or you surpass the max amount of operations OR max size of request (see AWS API docu)).
+
+Caution: Error handling
+
+Default: 0
+
+=back
+
+=back
+
+=cut
+
+sub batch_write_item {
+    my ( $self, $tables_ref, $args_ref ) = @_;
+    $args_ref ||= {
+        process_all => 0
+    };
+    
+    # check definition
+    my %table_map;
+    foreach my $table( keys %$tables_ref ) {
+        $table = $self->_table_name( $table );
+        my $table_ref = $self->_check_table( "batch_write_item", $table );
+        $table_map{ $table } = $table_ref;
+    }
+    
+    my %write = ( RequestItems => {} );
+    foreach my $table( keys %table_map ) {
+        my $table_out = $self->_table_name( $table, 1 );
+        my $t_ref = $tables_ref->{ $table_out };
+        my $table_requests_ref = $write{ RequestItems }->{ $table } = [];
+        
+        foreach my $operation( qw/ put delete / ) {
+            next unless defined $t_ref->{ $operation };
+            my @operations = ref( $t_ref->{ $operation } ) eq 'ARRAY'
+                ? @{ $t_ref->{ $operation } }
+                : ( $t_ref->{ $operation } );
+            
+            # put ..
+            if ( $operation eq 'put' ) {
+                foreach my $put_ref( @operations ) {
+                    push @$table_requests_ref, { 'PutRequest' => { Item => my $request_ref = {} } };
+                    
+                    # build the item
+                    foreach my $key( keys %$put_ref ){
+                        my $type = $self->_attrib_type( $table, $key );
+                        my $value;
+                        if ( $type eq 'SS' || $type eq 'NS' ) {
+                            my @values = map { $_. '' } ( ref( $put_ref->{ $key } ) ? @{ $put_ref->{ $key } } : () );
+                            $value = \@values;
+                        }
+                        else {
+                            $value = $put_ref->{ $key } .'';
+                        }
+                        $request_ref->{ $key } = { $type => $value };
+                    }
+                }
+            }
+            
+            # delete ..
+            else {
+                foreach my $delete_ref( @operations ) {
+                    push @$table_requests_ref, { 'DeleteRequest' => { Key => my $request_ref = {} } };
+                    $self->_build_pk_filter( $table, $delete_ref, $request_ref );
+                }
+            }
+        }
+    }
+    
+    # perform create
+    my ( $res, $res_ok, $json_ref ) = $self->request( BatchWriteItem => \%write );
+    
+    # having more to process
+    while ( $args_ref->{ process_all }
+        && $res_ok
+        && defined $json_ref->{ UnprocessedItems }
+        && scalar( keys %{ $json_ref->{ UnprocessedItems } } )
+    ) {
+        ( $res, $res_ok, $json_ref ) = $self->request( BatchWriteItem => { RequestItems => $json_ref->{ UnprocessedItems } } );
+    }
+    
+    # count unprocessed
+    my $unprocessed_count = 0;
+    my %next_query;
+    if ( $res_ok && defined $json_ref->{ UnprocessedItems } ) {
+        foreach my $table( keys %{ $json_ref->{ UnprocessedItems } } ) {
+            my @operations = @{ $json_ref->{ UnprocessedItems }->{ $table } };
+            next unless @operations;
+            $unprocessed_count += scalar( @operations );
+            $next_query{ $table } = {};
+            foreach my $operation_ref( @operations ) {
+                my ( $item_ref, $operation_name ) = defined $operation_ref->{ PutRequest }
+                    ? ( $operation_ref->{ PutRequest }->{ Item }, 'put' )
+                    : ( $operation_ref->{ DeleteRequest }->{ Key }, 'delete' );
+                #print Dumper( [ $operation_ref, $operation_name, $item_ref ] );
+                push @{ $next_query{ $table }->{ $operation_name } ||= [] },
+                    $self->_format_item( $table, $item_ref )
+            }
+        }
+    }
+    
+    return wantarray ? ( $res_ok, $unprocessed_count, \%next_query ) : $res_ok;
+}
+
+
 
 =head2 update_item $table, $update_ref, $where_ref, [$args_ref]
 
@@ -817,7 +988,7 @@ sub update_item {
     $table = $self->_table_name( $table );
     
     # check definition
-    my $table_ref = $self->_check_table( "put_item", $table );
+    my $table_ref = $self->_check_table( "update_item", $table );
     
     croak "update_item: Cannot update hash key value, do not set it in update-clause"
         if defined $update_ref->{ $table_ref->{ hash_key } };
@@ -837,14 +1008,14 @@ sub update_item {
         );
     
     # check other attributes
-    $self->_check_keys( "put_item: item values", $table, $update_ref );
+    $self->_check_keys( "update_item: item values", $table, $update_ref );
     croak "update_item: Cannot update hash key '$table_ref->{ hash_key }'. You have to delete and put the item!"
         if defined $update_ref->{ $table_ref->{ hash_key } };
     croak "update_item: Cannot update range key '$table_ref->{ hash_key }'. You have to delete and put the item!"
         if defined $table_ref->{ range_key } && defined $update_ref->{ $table_ref->{ range_key } };
     
     # having where -> check now
-    $self->_check_keys( "put_item: where clause", $table, $where_ref );
+    $self->_check_keys( "update_item: where clause", $table, $where_ref );
     
     # build put
     my %update = (
@@ -1791,7 +1962,7 @@ sub request {
         'host:'. $self->host,
         'x-amz-date:'. $http_date,
         'x-amz-security-token:'. $self->_credentials->{ SessionToken },
-        'x-amz-target:DynamoDB_20111205.'. $target,
+        'x-amz-target:DynamoDB_'. $self->api_version. '.'. $target,
         '',
         $json
     );
@@ -1804,7 +1975,7 @@ sub request {
     # .. setup headers
     $request->header( host => $self->host );
     $request->header( 'x-amz-date' => $http_date );
-    $request->header( 'x-amz-target', 'DynamoDB_20111205.'. $target );
+    $request->header( 'x-amz-target', 'DynamoDB_'. $self->api_version. '.'. $target );
     $request->header( 'x-amzn-authorization' => join( ',',
         'AWS3 AWSAccessKeyId='. $self->_credentials->{ AccessKeyId },
         'Algorithm=HmacSHA256',
@@ -2082,9 +2253,20 @@ sub _format_item {
     my ( $self, $table, $from_ref ) = @_;
     my $table_ref = $self->_check_table( format_item => $table );
     my %formatted;
-    while( my( $attrib, $type ) = each %{ $table_ref->{ attributes } } ) {
-        next unless defined $from_ref->{ $attrib };
-        $formatted{ $attrib } = $from_ref->{ $attrib }->{ $type };
+    if ( defined $from_ref->{ HashKeyElement } ) {
+        my @keys = ( 'hash' );
+        push @keys, 'range' if defined $table_ref->{ range_key };
+        foreach my $key( @keys ) {
+            my $key_name = $table_ref->{ "${key}_key" };
+            my $key_type = $table_ref->{ attributes }->{ $key_name };
+            $formatted{ $key_name } = $from_ref->{ ucfirst( $key ). 'KeyElement' }->{ $key_type };
+        }
+    }
+    else {
+        while( my( $attrib, $type ) = each %{ $table_ref->{ attributes } } ) {
+            next unless defined $from_ref->{ $attrib };
+            $formatted{ $attrib } = $from_ref->{ $attrib }->{ $type };
+        }
     }
     return \%formatted;
 }
