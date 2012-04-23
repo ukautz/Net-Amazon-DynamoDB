@@ -25,6 +25,7 @@ WriteMakefile(
         'JSON' => 0,
         'LWP::Protocol::https' => 0,
         'LWP::UserAgent' => 0,
+        'LWP::ConnCache' => 0,
         'Moose' => 1.0,
         'Net::Amazon::AWSSign' => 0,
         'Time::HiRes' => 0,

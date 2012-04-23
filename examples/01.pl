@@ -18,6 +18,7 @@ my $ddb = Net::Amazon::DynamoDB->new(
     access_key => $ENV{ AWS_ACCESS_KEY_ID },
     secret_key => $ENV{ AWS_SECRET_ACCESS_KEY },
     namespace  => 'dings_',
+    #use_keepalives => 10,
     tables     => {
         $table => {
             hash_key  => 'hid',

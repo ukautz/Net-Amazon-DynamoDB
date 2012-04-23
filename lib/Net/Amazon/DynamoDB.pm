@@ -63,7 +63,7 @@ See L<https://github.com/ukautz/Net-Amazon-DynamoDB> for latest release.
 use Moose;
 
 use v5.10;
-use version 0.74; our $VERSION = qv( "v0.1.11" );
+use version 0.74; our $VERSION = qv( "v0.1.12" );
 
 use Carp qw/ croak /;
 use Data::Dumper;
@@ -74,6 +74,7 @@ use Digest::SHA qw/ sha1_hex sha256_hex sha384_hex sha256 hmac_sha256_base64 /;
 use HTTP::Request;
 use JSON;
 use LWP::UserAgent;
+use LWP::ConnCache;
 use Net::Amazon::AWSSign;
 use Time::HiRes qw/ usleep /;
 use XML::Simple qw/ XMLin /;
@@ -135,13 +136,23 @@ has tables => ( isa => 'HashRef[HashRef]', is => 'rw', required => 1, trigger =>
     }
 } );
 
+=head2 use_keepalives
+
+Use keep_alive connections to AWS (Uses C<LWP::ConnCache> experimental mechanism). 0 to disable, positive number sets value for C<LWP::UserAgent> attribute 'keep_alive'
+Default: 0
+
+=cut
+
+has use_keep_alive => ( isa => 'Int', is => 'rw', default => 0 );
+
 =head2 lwp
 
 Contains C<LWP::UserAgent> instance.
 
 =cut
 
-has lwp => ( isa => 'LWP::UserAgent', is => 'rw', default => sub { LWP::UserAgent->new( timeout => 5 ) } );
+has lwp => ( isa => 'LWP::UserAgent', is => 'rw', lazy => 1, default => sub { my ($self) = @_; LWP::UserAgent->new( timeout => 5, keep_alive => $self->use_keep_alive ) } );
+has _lwpcache => ( isa => 'LWP::ConnCache', is => 'ro', lazy => 1, default => sub { my ($self) = @_; $self->lwp->conn_cache(); } );
 
 =head2 json
 
@@ -1995,6 +2006,7 @@ sub request {
         # run request
         $response = $self->lwp->request( $request );
         $ENV{ DYNAMO_DB_DEBUG } && warn Dumper( $response );
+        $ENV{ DYNAMO_DB_DEBUG_KEEPALIVE } && warn "  LWP keepalives in use: ", scalar($self->_lwpcache()->get_connections()), "/", $self->_lwpcache()->total_capacity(), "\n";
         
         # get json
         $json_ref = $response
@@ -2350,6 +2362,8 @@ __PACKAGE__->meta->make_immutable;
 =item * Ulrich Kautz <uk@fortrabbit.de>
 
 =item * Thanks to MadHacker L<http://stackoverflow.com/users/1139526/madhacker> (the signing code in request method)
+
+=item * Benjamin Abbott-Scoot <benjamin@abbott-scott.net> (Keep Alive patch)
 
 =back
 
