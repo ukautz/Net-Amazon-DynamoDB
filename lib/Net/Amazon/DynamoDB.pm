@@ -63,7 +63,7 @@ See L<https://github.com/ukautz/Net-Amazon-DynamoDB> for latest release.
 use Moose;
 
 use v5.10;
-use version 0.74; our $VERSION = qv( "v0.1.12" );
+use version 0.74; our $VERSION = qv( "v0.1.13" );
 
 use Carp qw/ croak /;
 use Data::Dumper;
@@ -672,7 +672,8 @@ sub put_item {
     $args_ref ||= {
         return_old  => 0,
         no_cache    => 0,
-        use_cache   => 0
+        use_cache   => 0,
+        max_retries => undef
     };
     $table = $self->_table_name( $table );
     
@@ -719,7 +720,9 @@ sub put_item {
     $put{ ReturnValues } = 'ALL_OLD' if $args_ref->{ return_old };
     
     # perform create
-    my ( $res, $res_ok, $json_ref ) = $self->request( PutItem => \%put );
+    my ( $res, $res_ok, $json_ref ) = $self->request( PutItem => \%put, {
+        max_retries => $args_ref->{ max_retries },
+    } );
     
     # get result
     if ( $res_ok ) {
@@ -816,7 +819,8 @@ Default: 0
 sub batch_write_item {
     my ( $self, $tables_ref, $args_ref ) = @_;
     $args_ref ||= {
-        process_all => 0
+        process_all => 0,
+        max_retries => undef
     };
     
     # check definition
@@ -871,7 +875,9 @@ sub batch_write_item {
     }
     
     # perform create
-    my ( $res, $res_ok, $json_ref ) = $self->request( BatchWriteItem => \%write );
+    my ( $res, $res_ok, $json_ref ) = $self->request( BatchWriteItem => \%write, {
+        max_retries => $args_ref->{ max_retries },
+    } );
     
     # having more to process
     while ( $args_ref->{ process_all }
@@ -879,7 +885,11 @@ sub batch_write_item {
         && defined $json_ref->{ UnprocessedItems }
         && scalar( keys %{ $json_ref->{ UnprocessedItems } } )
     ) {
-        ( $res, $res_ok, $json_ref ) = $self->request( BatchWriteItem => { RequestItems => $json_ref->{ UnprocessedItems } } );
+        ( $res, $res_ok, $json_ref ) = $self->request( BatchWriteItem => {
+            RequestItems => $json_ref->{ UnprocessedItems }
+        }, {
+            max_retries => $args_ref->{ max_retries },
+        } );
     }
     
     # count unprocessed
@@ -994,7 +1004,8 @@ sub update_item {
     $args_ref ||= {
         return_mode => '',
         no_cache    => 0,
-        use_cache   => 0
+        use_cache   => 0,
+        max_retries => undef
     };
     $table = $self->_table_name( $table );
     
@@ -1095,7 +1106,9 @@ sub update_item {
     }
     
     # perform create
-    my ( $res, $res_ok, $json_ref ) = $self->request( UpdateItem => \%update );
+    my ( $res, $res_ok, $json_ref ) = $self->request( UpdateItem => \%update, {
+        max_retries => $args_ref->{ max_retries },
+    } );
     
     # get result
     if ( $res_ok ) {
@@ -1195,10 +1208,11 @@ sub get_item {
     my ( $self, $table, $pk_ref, $args_ref ) = @_;
     $table = $self->_table_name( $table );
     $args_ref ||= {
-        consistent => undef,
-        attributes => undef,
-        no_cache   => 0,
-        use_cache  => 0
+        consistent  => undef,
+        attributes  => undef,
+        no_cache    => 0,
+        use_cache   => 0,
+        max_retries => undef
     };
     $args_ref->{ consistent } //= $self->read_consistent;
     
@@ -1247,7 +1261,9 @@ sub get_item {
     }
     
     # perform create
-    my ( $res, $res_ok, $json_ref ) = $self->request( GetItem => \%get );
+    my ( $res, $res_ok, $json_ref ) = $self->request( GetItem => \%get, {
+        max_retries => $args_ref->{ max_retries },
+    } );
     
     # return on success
     my $item_ref = $self->_format_item( $table, $json_ref->{ Item } ) if $res_ok && defined $json_ref->{ Item };
@@ -1305,7 +1321,9 @@ HashRef of tablename => primary key ArrayRef
 
 sub batch_get_item {
     my ( $self, $tables_ref, $args_ref ) = @_;
-    $args_ref ||= {};
+    $args_ref ||= {
+        max_retries => undef
+    };
     
     
     # check definition
@@ -1359,7 +1377,9 @@ sub batch_get_item {
     }
     
     # perform create
-    my ( $res, $res_ok, $json_ref ) = $self->request( BatchGetItem => \%get );
+    my ( $res, $res_ok, $json_ref ) = $self->request( BatchGetItem => \%get, {
+        max_retries => $args_ref->{ max_retries },
+    } );
     
     # return on success
     if ( $res_ok && defined $json_ref->{ Responses } ) {
@@ -1433,9 +1453,10 @@ Force using cache, if disabled per default but setupped
 sub delete_item {
     my ( $self, $table, $where_ref, $args_ref ) = @_;
     $args_ref ||= {
-        return_old => 0,
-        no_cache   => 0,
-        use_cache  => 0
+        return_old  => 0,
+        no_cache    => 0,
+        use_cache   => 0,
+        max_retries => undef
     };
     $table = $self->_table_name( $table );
     
@@ -1485,7 +1506,9 @@ sub delete_item {
     }
     
     # perform create
-    my ( $res, $res_ok, $json_ref ) = $self->request( DeleteItem => \%delete );
+    my ( $res, $res_ok, $json_ref ) = $self->request( DeleteItem => \%delete, {
+        max_retries => $args_ref->{ max_retries },
+    } );
     
     if ( $res_ok ) {
         
@@ -1641,6 +1664,7 @@ sub query_items {
         attributes  => undef,   # eq [ qw/ attrib1 attrib2 / ]
         count       => 0,       # returns amount instead of the actual result
         all         => 0,       # read all entries (runs possibly multiple queries)
+        max_retries => undef,   # overwrite default max rewrites
     };
     
     # check definition
@@ -1725,7 +1749,9 @@ sub query_items {
     
     # perform query
     #print Dumper( { QUERY => \%query } );
-    my ( $res, $res_ok, $json_ref ) = $self->request( Query => \%query );
+    my ( $res, $res_ok, $json_ref ) = $self->request( Query => \%query, {
+        max_retries => $args_ref->{ max_retries },
+    } );
     
     # format & return result
     if ( $res_ok && defined $json_ref->{ Items } ) {
@@ -1808,6 +1834,7 @@ sub scan_items {
         attributes  => undef,   # eq [ qw/ attrib1 attrib2 / ]
         count       => 0,       # returns amount instead of the actual result
         all         => 0,       # read all entries (runs possibly multiple queries)
+        max_retries => undef,   # overwrite default max retries
     };
     
     # check definition
@@ -1882,7 +1909,9 @@ sub scan_items {
     }
     
     # perform query
-    my ( $res, $res_ok, $json_ref ) = $self->request( Scan => \%query );
+    my ( $res, $res_ok, $json_ref ) = $self->request( Scan => \%query, {
+        max_retries => $args_ref->{ max_retries },
+    } );
     
     # format & return result
     if ( $res_ok && defined $json_ref->{ Items } ) {
@@ -1953,7 +1982,10 @@ Arbitrary request to DynamoDB API
 =cut
 
 sub request {
-    my ( $self, $target, $json ) = @_;
+    my ( $self, $target, $json, $args_ref ) = @_;
+    $args_ref ||= {
+        max_retries => undef
+    };
     
     # assure security token existing
     unless( $self->_init_security_token() ) {
@@ -2000,7 +2032,9 @@ sub request {
     $request->content( $json );
     
     my ( $json_ref, $response );
-    my $tries = $self->max_retries + 1;
+    my $tries = defined $args_ref->{ max_retries }
+        ? $args_ref->{ max_retries }
+        : $self->max_retries + 1;
     while( 1 ) {
         
         # run request
