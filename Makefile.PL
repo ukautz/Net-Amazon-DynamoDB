@@ -13,6 +13,7 @@ WriteMakefile(
     BUILD_REQUIRES   => {
         'Test::More' => 0,
         'Cache' => 0,
+        'Cache::Memory' => 0,
     },
     PREREQ_PM        => {
         'DateTime' => 0,
