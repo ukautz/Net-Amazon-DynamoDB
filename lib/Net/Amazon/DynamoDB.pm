@@ -248,7 +248,7 @@ has max_retries => ( isa => 'Int', is => 'rw', default => 1 );
 
 =head2 derive_table
 
-Whether we parse results using table definition (faster) or without a known definition (still requires table definition for keys)
+Whether we parse results using table definition (faster) or without a known definition (still requires table definition for indexes)
 
 Default: 0
 
