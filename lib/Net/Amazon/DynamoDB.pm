@@ -246,6 +246,16 @@ Default: 0 (do only once, no retries)
 
 has max_retries => ( isa => 'Int', is => 'rw', default => 1 );
 
+=head2 derive_table
+
+Whether we parse results using table definition (faster) or without a known definition (still requires table definition for keys)
+
+Default: 0
+
+=cut
+
+has derive_table => ( isa => 'Bool', is => 'rw', default => 0 );
+
 =head2 retry_timeout
 
 Wait period in seconds between tries. Float allowed.
@@ -2309,9 +2319,16 @@ sub _format_item {
         }
     }
     else {
-        while( my( $attrib, $type ) = each %{ $table_ref->{ attributes } } ) {
-            next unless defined $from_ref->{ $attrib };
-            $formatted{ $attrib } = $from_ref->{ $attrib }->{ $type };
+        if ( $self->derive_table() ) {
+            while ( my ( $key, $value ) = each %$from_ref ) {
+	            $formatted{$key} = ( $value->{'S'} || $value->{'N'} || $value->{'NS'} || $value->{'SS'} );
+	        }
+        }
+        else {
+            while( my( $attrib, $type ) = each %{ $table_ref->{ attributes } } ) {
+                next unless defined $from_ref->{ $attrib };
+                $formatted{ $attrib } = $from_ref->{ $attrib }->{ $type };
+            }
         }
     }
     return \%formatted;
