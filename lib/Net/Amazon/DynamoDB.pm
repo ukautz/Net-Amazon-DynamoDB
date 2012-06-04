@@ -78,6 +78,7 @@ use LWP::ConnCache;
 use Net::Amazon::AWSSign;
 use Time::HiRes qw/ usleep /;
 use XML::Simple qw/ XMLin /;
+use Encode;
 
 =head1 CLASS ATTRIBUTES
 
@@ -2010,15 +2011,15 @@ sub request {
     my $http_date = DateTime::Format::HTTP->format_datetime( DateTime->now );
     
     # build signable content
-    my $sign_content = join( "\n",
+    #$json is already utf8 encoded via json encode
+    my $sign_content = encode_utf8(join( "\n",
         'POST', '/', '',
         'host:'. $self->host,
         'x-amz-date:'. $http_date,
         'x-amz-security-token:'. $self->_credentials->{ SessionToken },
-        'x-amz-target:DynamoDB_'. $self->api_version. '.'. $target,
-        '',
-        $json
-    );
+        'x-amz-target:DynamoDB_20111205.'. $target,
+        ''
+    )) . "\n" . $json ;
     my $signature = hmac_sha256_base64( sha256( $sign_content ), $self->_credentials->{ SecretAccessKey } );
     $signature .= '=' while( length( $signature ) % 4 != 0 );
     
