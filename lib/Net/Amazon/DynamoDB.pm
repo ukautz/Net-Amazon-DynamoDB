@@ -162,7 +162,7 @@ JSON object needs to support: canonical, allow_nonref and utf8
 
 =cut
 
-has json => ( isa => 'JSON', is => 'rw', default => sub { JSON->new() }, trigger => sub {
+has json => ( isa => 'JSON', is => 'rw', default => sub { JSON->new()->canonical( 1 )->allow_nonref( 1 )->utf8( 1 ) }, trigger => sub {
     shift->json->canonical( 1 )->allow_nonref( 1 )->utf8( 1 );
 } );
 
