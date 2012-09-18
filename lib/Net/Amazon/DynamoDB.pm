@@ -1057,7 +1057,15 @@ sub update_item {
                 Action => 'DELETE'
             };
         }
-        
+
+        # if ++N or --N on numeric type, ADD to get inc/dec behavior
+        elsif ( $type eq 'N' && $value =~ /^(--|\+\+)(\d+)$/ ) {
+            $update{ AttributeUpdates }->{ $key } = {
+                Value  => { $type => ($1 eq '--') ? "-$2" : "$2" },
+                Action => 'ADD'
+            };
+        }
+
         # replace for scalar
         elsif ( $type eq 'N' || $type eq 'S' ) {
             $update{ AttributeUpdates }->{ $key } = {
