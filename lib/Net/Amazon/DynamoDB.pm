@@ -53,9 +53,9 @@ See L<https://github.com/ukautz/Net-Amazon-DynamoDB> for latest release.
     } ) or die $ddb->error;
     $ddb->put_item( sometable => {
         id        => 5,
-        range_key => 7,
+        range_id  => 7,
         attrib1   => 'It is now '. localtime(),
-        attrib1   => 'Or in unix timstamp '. time(),
+        attrib2   => 'Or in unix timstamp '. time(),
     } ) or die $ddb->error;
 
 =cut
@@ -137,7 +137,7 @@ has tables => ( isa => 'HashRef[HashRef]', is => 'rw', required => 1, trigger =>
     }
 } );
 
-=head2 use_keepalives
+=head2 use_keep_alive
 
 Use keep_alive connections to AWS (Uses C<LWP::ConnCache> experimental mechanism). 0 to disable, positive number sets value for C<LWP::UserAgent> attribute 'keep_alive'
 Default: 0
