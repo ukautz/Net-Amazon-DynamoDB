@@ -1,3 +1,6 @@
+0.1.14	2012-10-10
+	* Enable process_all parameter for batch_get_item
+
 0.1.13	2012-05-06
 	* Overwrite argument for "max_retries" in main operations
 

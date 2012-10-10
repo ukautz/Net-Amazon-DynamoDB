@@ -63,7 +63,7 @@ See L<https://github.com/ukautz/Net-Amazon-DynamoDB> for latest release.
 use Moose;
 
 use v5.10;
-use version 0.74; our $VERSION = qv( "v0.1.13" );
+use version 0.74; our $VERSION = qv( "v0.1.14" );
 
 use Carp qw/ croak /;
 use Data::Dumper;
@@ -1282,7 +1282,7 @@ sub get_item {
 
 
 
-=head2 batch_get_item $tables_ref
+=head2 batch_get_item $tables_ref, [$args_ref]
 
 Read multiple items (possible accross multiple tables) identified by their hash and range key (if required).
 
@@ -1314,7 +1314,23 @@ Read multiple items (possible accross multiple tables) identified by their hash 
 
 HashRef of tablename => primary key ArrayRef
 
+=item $args_ref
+
+HashRef
+
+=over
+
+=item * process_all
+
+Batch request might not fetch all requested items at once. This switch enforces
+to batch get the unprocessed items.
+
+Default: 0
+
 =back
+
+=back
+
 
 
 =cut
@@ -1322,7 +1338,8 @@ HashRef of tablename => primary key ArrayRef
 sub batch_get_item {
     my ( $self, $tables_ref, $args_ref ) = @_;
     $args_ref ||= {
-        max_retries => undef
+        max_retries => undef,
+        process_all => undef
     };
     
     
@@ -1383,6 +1400,31 @@ sub batch_get_item {
     
     # return on success
     if ( $res_ok && defined $json_ref->{ Responses } ) {
+
+        if ( $args_ref->{ process_all } && defined( my $ukeys_ref = $json_ref->{ UnprocessedKeys } ) ) {
+            while ( $ukeys_ref ) {
+                ( $res, $res_ok, my $ujson_ref ) = $self->request( BatchGetItem =>
+                    {
+                        RequestItems => $ukeys_ref
+                    }, {
+                        max_retries => $args_ref->{ max_retries },
+                    } );
+                if ( $res_ok && defined $ujson_ref->{ Responses } ) {
+                    foreach my $table_out( keys %$tables_ref ) {
+                        my $table = $self->_table_name( $table_out );
+                        if ( defined $ujson_ref->{ Responses }->{ $table } && defined $ujson_ref->{ Responses }->{ $table }->{ Items } ) {
+                            $json_ref->{ Responses }->{ $table } ||= {};
+                            push @{ $json_ref->{ Responses }->{ $table }->{ Items } ||= {} },
+                                @{ $ujson_ref->{ Responses }->{ $table }->{ Items } };
+                        }
+                    }
+                }
+                $ukeys_ref = $res_ok && defined $ujson_ref->{ UnprocessedKeys }
+                    ? $ujson_ref->{ UnprocessedKeys }
+                    : undef;
+            }
+        }
+
         my %res;
         foreach my $table_out( keys %$tables_ref ) {
             my $table = $self->_table_name( $table_out );
