@@ -53,9 +53,9 @@ See L<https://github.com/ukautz/Net-Amazon-DynamoDB> for latest release.
     } ) or die $ddb->error;
     $ddb->put_item( sometable => {
         id        => 5,
-        range_key => 7,
+        range_id  => 7,
         attrib1   => 'It is now '. localtime(),
-        attrib1   => 'Or in unix timstamp '. time(),
+        attrib2   => 'Or in unix timstamp '. time(),
     } ) or die $ddb->error;
 
 =cut
@@ -78,6 +78,7 @@ use LWP::ConnCache;
 use Net::Amazon::AWSSign;
 use Time::HiRes qw/ usleep /;
 use XML::Simple qw/ XMLin /;
+use Encode;
 
 =head1 CLASS ATTRIBUTES
 
@@ -136,7 +137,7 @@ has tables => ( isa => 'HashRef[HashRef]', is => 'rw', required => 1, trigger =>
     }
 } );
 
-=head2 use_keepalives
+=head2 use_keep_alive
 
 Use keep_alive connections to AWS (Uses C<LWP::ConnCache> experimental mechanism). 0 to disable, positive number sets value for C<LWP::UserAgent> attribute 'keep_alive'
 Default: 0
@@ -162,7 +163,7 @@ JSON object needs to support: canonical, allow_nonref and utf8
 
 =cut
 
-has json => ( isa => 'JSON', is => 'rw', default => sub { JSON->new() }, trigger => sub {
+has json => ( isa => 'JSON', is => 'rw', default => sub { JSON->new()->canonical( 1 )->allow_nonref( 1 )->utf8( 1 ) }, trigger => sub {
     shift->json->canonical( 1 )->allow_nonref( 1 )->utf8( 1 );
 } );
 
@@ -245,6 +246,16 @@ Default: 0 (do only once, no retries)
 =cut
 
 has max_retries => ( isa => 'Int', is => 'rw', default => 1 );
+
+=head2 derive_table
+
+Whether we parse results using table definition (faster) or without a known definition (still requires table definition for indexes)
+
+Default: 0
+
+=cut
+
+has derive_table => ( isa => 'Bool', is => 'rw', default => 0 );
 
 =head2 retry_timeout
 
@@ -1057,7 +1068,15 @@ sub update_item {
                 Action => 'DELETE'
             };
         }
-        
+
+        # if ++N or --N on numeric type, ADD to get inc/dec behavior
+        elsif ( $type eq 'N' && $value =~ /^(--|\+\+)(\d+)$/ ) {
+            $update{ AttributeUpdates }->{ $key } = {
+                Value  => { $type => ($1 eq '--') ? "-$2" : "$2" },
+                Action => 'ADD'
+            };
+        }
+
         # replace for scalar
         elsif ( $type eq 'N' || $type eq 'S' ) {
             $update{ AttributeUpdates }->{ $key } = {
@@ -2042,15 +2061,15 @@ sub request {
     my $http_date = DateTime::Format::HTTP->format_datetime( DateTime->now );
     
     # build signable content
-    my $sign_content = join( "\n",
+    #$json is already utf8 encoded via json encode
+    my $sign_content = encode_utf8(join( "\n",
         'POST', '/', '',
         'host:'. $self->host,
         'x-amz-date:'. $http_date,
         'x-amz-security-token:'. $self->_credentials->{ SessionToken },
-        'x-amz-target:DynamoDB_'. $self->api_version. '.'. $target,
-        '',
-        $json
-    );
+        'x-amz-target:DynamoDB_20111205.'. $target,
+        ''
+    )) . "\n" . $json ;
     my $signature = hmac_sha256_base64( sha256( $sign_content ), $self->_credentials->{ SecretAccessKey } );
     $signature .= '=' while( length( $signature ) % 4 != 0 );
     
@@ -2351,9 +2370,16 @@ sub _format_item {
         }
     }
     else {
-        while( my( $attrib, $type ) = each %{ $table_ref->{ attributes } } ) {
-            next unless defined $from_ref->{ $attrib };
-            $formatted{ $attrib } = $from_ref->{ $attrib }->{ $type };
+        if ( $self->derive_table() ) {
+            while ( my ( $key, $value ) = each %$from_ref ) {
+	            $formatted{$key} = ( $value->{'S'} || $value->{'N'} || $value->{'NS'} || $value->{'SS'} );
+	        }
+        }
+        else {
+            while( my( $attrib, $type ) = each %{ $table_ref->{ attributes } } ) {
+                next unless defined $from_ref->{ $attrib };
+                $formatted{ $attrib } = $from_ref->{ $attrib }->{ $type };
+            }
         }
     }
     return \%formatted;
