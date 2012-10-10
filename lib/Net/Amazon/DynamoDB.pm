@@ -1414,7 +1414,7 @@ sub batch_get_item {
                         my $table = $self->_table_name( $table_out );
                         if ( defined $ujson_ref->{ Responses }->{ $table } && defined $ujson_ref->{ Responses }->{ $table }->{ Items } ) {
                             $json_ref->{ Responses }->{ $table } ||= {};
-                            push @{ $json_ref->{ Responses }->{ $table }->{ Items } ||= {} },
+                            push @{ $json_ref->{ Responses }->{ $table }->{ Items } ||= [] },
                                 @{ $ujson_ref->{ Responses }->{ $table }->{ Items } };
                         }
                     }
