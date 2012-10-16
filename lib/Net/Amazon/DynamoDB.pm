@@ -18,7 +18,7 @@ See L<https://github.com/ukautz/Net-Amazon-DynamoDB> for latest release.
         access_key => $my_access_key,
         secret_key => $my_secret_key,
         tables     => {
-            
+
             # table with only hash key
             sometable => {
                 hash_key   => 'id',
@@ -27,7 +27,7 @@ See L<https://github.com/ukautz/Net-Amazon-DynamoDB> for latest release.
                     name => 'S'
                 }
             },
-            
+
             # table with hash and reange key key
             othertable => {
                 hash_key   => 'id',
@@ -41,11 +41,11 @@ See L<https://github.com/ukautz/Net-Amazon-DynamoDB> for latest release.
             }
         }
     );
-    
+
     # create both tables with 10 read and 5 write unites
     $ddb->exists_table( $_ ) || $ddb->create_table( $_, 10, 5 )
         for qw/ sometable othertable /;
-    
+
     # insert something into tables
     $ddb->put_item( sometable => {
         id   => 5,
@@ -90,15 +90,15 @@ The table definitions
 
 has tables => ( isa => 'HashRef[HashRef]', is => 'rw', required => 1, trigger => sub {
     my ( $self ) = @_;
-    
+
     # check table
     while( my ( $table, $table_ref ) = each %{ $self->{ tables } } ) {
-        
+
         # determine primary keys
         my @check_pk = ( 'hash' );
         push @check_pk, 'range'
             if defined $table_ref->{ range_key };
-        
+
         # check primary keys
         foreach my $check_pk( @check_pk ) {
             my $key_pk = "${check_pk}_key";
@@ -112,7 +112,7 @@ has tables => ( isa => 'HashRef[HashRef]', is => 'rw', required => 1, trigger =>
                 . " expect 'S' or 'N'"
                 unless $table_ref->{ attributes }->{ $name_pk } =~ /^(S|N)$/;
         }
-        
+
         # check attributes
         while( my( $attr_name, $attr_type ) = each %{ $table_ref->{ attributes } } ) {
             croak "Wrong data type for attribute '$attr_name' in table '$table': Got '$attr_type' was"
@@ -120,10 +120,10 @@ has tables => ( isa => 'HashRef[HashRef]', is => 'rw', required => 1, trigger =>
                 unless $attr_type =~ /^[NS]S?$/;
         }
     }
-    
+
     # no need to go further, if no namespace given
     return unless $self->namespace;
-    
+
     # update table definitions with namespace
     my %new_table = ();
     my $updated = 0;
@@ -375,10 +375,10 @@ sub create_table {
     $table = $self->_table_name( $table );
     $read_amount ||= 10;
     $write_amount ||= 5;
-    
+
     # check & get table definition
     my $table_ref = $self->_check_table( "create_table", $table );
-    
+
     # init create definition
     my %create = (
         TableName => $table,
@@ -387,7 +387,7 @@ sub create_table {
             WriteCapacityUnits => $write_amount + 0,
         }
     );
-    
+
     # build keys
     $create{ KeySchema } = {
         HashKeyElement => {
@@ -401,10 +401,10 @@ sub create_table {
             AttributeType => $table_ref->{ attributes }->{ $table_ref->{ range_key } }
         };
     }
-    
+
     # perform create
     my ( $res, $res_ok, $json_ref ) = $self->request( CreateTable => \%create );
-    
+
     # got res
     if ( $res_ok && defined $json_ref->{ TableDescription } ) {
         return {
@@ -423,7 +423,7 @@ sub create_table {
             ),
         }
     }
-    
+
     # set error
     $self->error( 'create_table failed: '. $self->_extract_error_message( $res ) );
     return ;
@@ -442,18 +442,18 @@ Returns bool whether table is now in deleting state (succesfully performed)
 sub delete_table {
     my ( $self, $table ) = @_;
     $table = $self->_table_name( $table );
-    
+
     # check & get table definition
     my $table_ref = $self->_check_table( delete_table => $table );
-    
+
     # perform create
     my ( $res, $res_ok, $json_ref ) = $self->request( DeleteTable => { TableName => $table } );
-    
+
     # got result
     if ( $res_ok && defined $json_ref->{ TableDescription } ) {
         return $json_ref->{ TableDescription }->{ TableStatus } eq 'DELETING';
     }
-    
+
     # set error
     $self->error( 'delete_table failed: '. $self->_extract_error_message( $res ) );
     return ;
@@ -491,10 +491,10 @@ If no such table exists, return is
 sub describe_table {
     my ( $self, $table ) = @_;
     $table = $self->_table_name( $table );
-    
+
     # check table definition
     $self->_check_table( "describe_table", $table );
-    
+
     my ( $res, $res_ok, $json_ref ) = $self->request( DescribeTable => { TableName => $table } );
     # got result
     if ( $res_ok ) {
@@ -525,7 +525,7 @@ sub describe_table {
             }
         }
     }
-    
+
     # set error
     $self->error( 'describe_table failed: '. $self->_extract_error_message( $res ) );
     return ;
@@ -541,7 +541,7 @@ Update read and write amount for a table
 sub update_table {
     my ( $self, $table, $read_amount, $write_amount ) = @_;
     $table = $self->_table_name( $table );
-    
+
     my ( $res, $res_ok, $json_ref ) = $self->request( UpdateTable => {
         TableName             => $table,
         ProvisionedThroughput => {
@@ -549,11 +549,11 @@ sub update_table {
             WriteCapacityUnits => $write_amount + 0,
         }
     } );
-    
+
     if ( $res_ok ) {
         return 1;
     }
-    
+
     # set error
     $self->error( 'update_table failed: '. $self->_extract_error_message( $res ) );
     return ;
@@ -570,18 +570,18 @@ Returns bool whether table exists or not
 sub exists_table {
     my ( $self, $table ) = @_;
     $table = $self->_table_name( $table );
-    
+
     # check table definition
     $self->_check_table( "exists_table", $table );
-    
+
     my ( $res, $res_ok, $json_ref );
     eval {
         ( $res, $res_ok, $json_ref ) = $self->request( DescribeTable => { TableName => $table } );
     };
-    
+
     return defined $json_ref->{ Table } && defined $json_ref->{ Table }->{ ItemCount } ? 1 : 0
         if $res_ok;
-    
+
     # set error
     return 0;
 }
@@ -596,7 +596,7 @@ Returns tables names as arrayref (or array in array context)
 
 sub list_tables {
     my ( $self ) = @_;
-    
+
     my ( $res, $res_ok, $json_ref ) = $self->request( ListTables => {} );
     if ( $res_ok ) {
         my $ns_length = length( $self->namespace );
@@ -607,7 +607,7 @@ sub list_tables {
         } @{ $json_ref->{ TableNames } };
         return wantarray ? @table_names : \@table_names;
     }
-    
+
     # set error
     $self->error( 'list_tables failed: '. $self->_extract_error_message( $res ) );
     return ;
@@ -625,7 +625,7 @@ Write a single item to table. All primary keys are required in new item.
         some_attrib => 'bla',
         other_attrib => 'dunno'
     } );
-    
+
     # write conditionally
     $ddb->put_item( my_table => {
         id => 123,
@@ -687,27 +687,27 @@ sub put_item {
         max_retries => undef
     };
     $table = $self->_table_name( $table );
-    
+
     # check definition
     my $table_ref = $self->_check_table( "put_item", $table );
-    
+
     # check primary keys
     croak "put_item: Missing value for hash key '$table_ref->{ hash_key }'"
         unless defined $item_ref->{ $table_ref->{ hash_key } }
         && length( $item_ref->{ $table_ref->{ hash_key } } );
-    
+
     # check other attributes
     $self->_check_keys( "put_item: item values", $table, $item_ref );
-    
+
     # having where -> check now
     $self->_check_keys( "put_item: where clause", $table, $where_ref ) if $where_ref;
-    
+
     # build put
     my %put = (
         TableName => $table,
         Item      => {}
     );
-    
+
     # build the item
     foreach my $key( keys %$item_ref ){
         my $type = $self->_attrib_type( $table, $key );
@@ -721,29 +721,29 @@ sub put_item {
         }
         $put{ Item }->{ $key } = { $type => $value };
     }
-    
+
     # build possible where clause
     if ( $where_ref ) {
         $self->_build_attrib_filter( $table, $where_ref, $put{ Expected } = {} );
     }
-    
+
     # add return value, if set
     $put{ ReturnValues } = 'ALL_OLD' if $args_ref->{ return_old };
-    
+
     # perform create
     my ( $res, $res_ok, $json_ref ) = $self->request( PutItem => \%put, {
         max_retries => $args_ref->{ max_retries },
     } );
-    
+
     # get result
     if ( $res_ok ) {
-        
+
         # clear cache
         if ( $self->_cache_enabled( $args_ref ) ) {
             my $cache_key = $self->_cache_key_single( $table, $item_ref );
             $self->cache->remove( $cache_key );
         }
-        
+
         if ( $args_ref->{ return_old } ) {
             return defined $json_ref->{ Attributes }
                 ? $self->_format_item( $table, $json_ref->{ Attributes } )
@@ -753,7 +753,7 @@ sub put_item {
             return $json_ref->{ ConsumedCapacityUnits } > 0;
         }
     }
-    
+
     # set error
     $self->error( 'put_item failed: '. $self->_extract_error_message( $res ) );
     return ;
@@ -787,7 +787,7 @@ Example:
         },
         # table2_name => ..
     } );
-    
+
     if ( $ok ) {
         if ( $unprocessed_count ) {
             print "Ok, but $unprocessed_count still not processed\n";
@@ -833,7 +833,7 @@ sub batch_write_item {
         process_all => 0,
         max_retries => undef
     };
-    
+
     # check definition
     my %table_map;
     foreach my $table( keys %$tables_ref ) {
@@ -841,24 +841,24 @@ sub batch_write_item {
         my $table_ref = $self->_check_table( "batch_write_item", $table );
         $table_map{ $table } = $table_ref;
     }
-    
+
     my %write = ( RequestItems => {} );
     foreach my $table( keys %table_map ) {
         my $table_out = $self->_table_name( $table, 1 );
         my $t_ref = $tables_ref->{ $table_out };
         my $table_requests_ref = $write{ RequestItems }->{ $table } = [];
-        
+
         foreach my $operation( qw/ put delete / ) {
             next unless defined $t_ref->{ $operation };
             my @operations = ref( $t_ref->{ $operation } ) eq 'ARRAY'
                 ? @{ $t_ref->{ $operation } }
                 : ( $t_ref->{ $operation } );
-            
+
             # put ..
             if ( $operation eq 'put' ) {
                 foreach my $put_ref( @operations ) {
                     push @$table_requests_ref, { 'PutRequest' => { Item => my $request_ref = {} } };
-                    
+
                     # build the item
                     foreach my $key( keys %$put_ref ){
                         my $type = $self->_attrib_type( $table, $key );
@@ -874,7 +874,7 @@ sub batch_write_item {
                     }
                 }
             }
-            
+
             # delete ..
             else {
                 foreach my $delete_ref( @operations ) {
@@ -884,12 +884,12 @@ sub batch_write_item {
             }
         }
     }
-    
+
     # perform create
     my ( $res, $res_ok, $json_ref ) = $self->request( BatchWriteItem => \%write, {
         max_retries => $args_ref->{ max_retries },
     } );
-    
+
     # having more to process
     while ( $args_ref->{ process_all }
         && $res_ok
@@ -902,7 +902,7 @@ sub batch_write_item {
             max_retries => $args_ref->{ max_retries },
         } );
     }
-    
+
     # count unprocessed
     my $unprocessed_count = 0;
     my %next_query;
@@ -922,7 +922,7 @@ sub batch_write_item {
             }
         }
     }
-    
+
     return wantarray ? ( $res_ok, $unprocessed_count, \%next_query ) : $res_ok;
 }
 
@@ -934,17 +934,18 @@ Update existing item in database. All primary keys are required in where clause
 
     # update existing
     $ddb->update_item( my_table => {
-        id => 123,
-        some_attrib => 'bla',
-        other_attrib => 'dunno'
-    } );
-    
-    # write conditionally
-    $ddb->update_item( my_table => {
-        id => 123,
         some_attrib => 'bla',
         other_attrib => 'dunno'
     }, {
+        id => 123,
+    } );
+
+    # write conditionally
+    $ddb->update_item( my_table => {
+        some_attrib => 'bla',
+        other_attrib => 'dunno'
+    }, {
+        id => 123,
         some_attrib => { # only update, if some_attrib has the value 'blub'
             value => 'blub'
         },
@@ -971,7 +972,7 @@ Hashref containing the updates.
 
 =item * replace a values
 
-    { 
+    {
         attribname1 => 'somevalue',
         attribname2 => [ 1, 2, 3 ]
     }
@@ -1019,17 +1020,17 @@ sub update_item {
         max_retries => undef
     };
     $table = $self->_table_name( $table );
-    
+
     # check definition
     my $table_ref = $self->_check_table( "update_item", $table );
-    
+
     croak "update_item: Cannot update hash key value, do not set it in update-clause"
         if defined $update_ref->{ $table_ref->{ hash_key } };
-    
+
     croak "update_item: Cannot update range key value, do not set it in update-clause"
         if defined $table_ref->{ range_key }
         && defined $update_ref->{ $table_ref->{ range_key } };
-    
+
     # check primary keys
     croak "update_item: Missing value for hash key '$table_ref->{ hash_key }' in where-clause"
         unless defined $where_ref->{ $table_ref->{ hash_key } }
@@ -1039,29 +1040,29 @@ sub update_item {
             defined $where_ref->{ $table_ref->{ range_key } }
             && length( $where_ref->{ $table_ref->{ range_key } } )
         );
-    
+
     # check other attributes
     $self->_check_keys( "update_item: item values", $table, $update_ref );
     croak "update_item: Cannot update hash key '$table_ref->{ hash_key }'. You have to delete and put the item!"
         if defined $update_ref->{ $table_ref->{ hash_key } };
     croak "update_item: Cannot update range key '$table_ref->{ hash_key }'. You have to delete and put the item!"
         if defined $table_ref->{ range_key } && defined $update_ref->{ $table_ref->{ range_key } };
-    
+
     # having where -> check now
     $self->_check_keys( "update_item: where clause", $table, $where_ref );
-    
+
     # build put
     my %update = (
         TableName        => $table,
         AttributeUpdates => {},
         Key              => {}
     );
-    
+
     # build the item
     foreach my $key( keys %$update_ref ) {
         my $type = $self->_attrib_type( $table, $key );
         my $value = $update_ref->{ $key };
-        
+
         # delete
         if ( ! defined $value ) {
             $update{ AttributeUpdates }->{ $key } = {
@@ -1084,10 +1085,10 @@ sub update_item {
                 Action => 'PUT'
             };
         }
-        
+
         # replace or add for array types
         elsif ( $type =~ /^[NS]S$/ ) {
-            
+
             # add \[ qw/ value1 value2 / ]
             if ( ref( $value ) eq 'REF' ) {
                 $update{ AttributeUpdates }->{ $key } = {
@@ -1095,7 +1096,7 @@ sub update_item {
                     Action => 'ADD'
                 };
             }
-            
+
             # replace [ qw/ value1 value2 / ]
             else {
                 $update{ AttributeUpdates }->{ $key } = {
@@ -1105,39 +1106,39 @@ sub update_item {
             }
         }
     }
-    
+
     # build possible where clause
     my %where = %$where_ref;
-    
+
     # primary key
     $self->_build_pk_filter( $table, \%where, $update{ Key } );
-    
+
     # additional filters
     if ( keys %where ) {
         $self->_build_attrib_filter( $table, \%where, $update{ Expected } = {} );
     }
-    
+
     # add return value, if set
     if ( $args_ref->{ return_mode } ) {
         $update{ ReturnValues } = "$args_ref->{ return_mode }" =~ /^(?:ALL_OLD|UPDATED_OLD|ALL_NEW|UPDATED_NEW)$/i
             ? uc( $args_ref->{ return_mode } )
             : "ALL_OLD";
     }
-    
+
     # perform create
     my ( $res, $res_ok, $json_ref ) = $self->request( UpdateItem => \%update, {
         max_retries => $args_ref->{ max_retries },
     } );
-    
+
     # get result
     if ( $res_ok ) {
-        
+
         # clear cache
         if ( $self->_cache_enabled( $args_ref ) ) {
             my $cache_key = $self->_cache_key_single( $table, $where_ref );
             $self->cache->remove( $cache_key );
         }
-        
+
         if ( $args_ref->{ return_mode } ) {
             return defined $json_ref->{ Attributes }
                 ? $self->_format_item( $table, $json_ref->{ Attributes } )
@@ -1147,7 +1148,7 @@ sub update_item {
             return $json_ref->{ ConsumedCapacityUnits } > 0;
         }
     }
-    
+
     # set error
     $self->error( 'put_item failed: '. $self->_extract_error_message( $res ) );
     return ;
@@ -1162,7 +1163,7 @@ Read a single item by hash (and range) key.
     # only with hash key
     my $item1 = $ddb->get_item( my_table => { id => 123 } );
     print "Got $item1->{ some_key }\n";
-    
+
     # with hash and range key, also consistent read and only certain attributes in return
     my $item2 = $ddb->get_item( my_other_table =>, {
         id    => $hash_value, # the hash value
@@ -1173,7 +1174,7 @@ Read a single item by hash (and range) key.
     } );
     print "Got $item2->{ attrib1 }\n";
 
-=over 
+=over
 
 =item * $table
 
@@ -1187,7 +1188,7 @@ HashRef containing all primary keys
     {
         $hash_key => $hash_value
     }
-    
+
     # hash and range key
     {
         $hash_key => $hash_value,
@@ -1234,10 +1235,10 @@ sub get_item {
         max_retries => undef
     };
     $args_ref->{ consistent } //= $self->read_consistent;
-    
+
     # check definition
     my $table_ref = $self->_check_table( "get_item", $table );
-    
+
     # check primary keys
     croak "get_item: Missing value for hash key '$table_ref->{ hash_key }'"
         unless defined $pk_ref->{ $table_ref->{ hash_key } }
@@ -1247,7 +1248,7 @@ sub get_item {
             defined $pk_ref->{ $table_ref->{ range_key } }
             && length( $pk_ref->{ $table_ref->{ hash_key } } )
         );
-    
+
     # use cache
     my $use_cache = $self->_cache_enabled( $args_ref );
     my $cache_key;
@@ -1256,8 +1257,8 @@ sub get_item {
         my $cached = $self->cache->thaw( $cache_key );
         return $cached if defined $cached;
     }
-    
-    
+
+
     # build get
     my %get = (
         TableName => $table,
@@ -1270,7 +1271,7 @@ sub get_item {
             }
         }
     );
-    
+
     # add range key ?
     if ( defined $table_ref->{ range_key } ) {
         $get{ Key }->{ RangeKeyElement } = {
@@ -1278,22 +1279,22 @@ sub get_item {
                     $pk_ref->{ $table_ref->{ range_key } }
         };
     }
-    
+
     # perform create
     my ( $res, $res_ok, $json_ref ) = $self->request( GetItem => \%get, {
         max_retries => $args_ref->{ max_retries },
     } );
-    
+
     # return on success
     my $item_ref = $self->_format_item( $table, $json_ref->{ Item } ) if $res_ok && defined $json_ref->{ Item };
     if ( $use_cache ) {
         $self->cache->freeze( $cache_key, $item_ref );
     }
     return $item_ref;
-    
+
     # return on success, but nothing received
     return undef if $res_ok;
-    
+
     # set error
     $self->error( 'get_item failed: '. $self->_extract_error_message( $res ) );
     return ;
@@ -1320,7 +1321,7 @@ Read multiple items (possible accross multiple tables) identified by their hash 
             attributes => [ qw/ attrib1 attrib2 / ]
         ]
     } );
-    
+
     foreach my $table( keys %$res ) {
         foreach my $item( @{ $res->{ $table } } ) {
             print "$item->{ some_attrib }\n";
@@ -1360,8 +1361,8 @@ sub batch_get_item {
         max_retries => undef,
         process_all => undef
     };
-    
-    
+
+
     # check definition
     my %table_map;
     foreach my $table( keys %$tables_ref ) {
@@ -1369,35 +1370,35 @@ sub batch_get_item {
         my $table_ref = $self->_check_table( "batch_get_item", $table );
         $table_map{ $table } = $table_ref;
     }
-    
+
     my %get = ( RequestItems => {} );
     foreach my $table( keys %table_map ) {
         my $table_out = $self->_table_name( $table, 1 );
         my $t_ref = $tables_ref->{ $table_out };
-        
+
         # init items for table
         $get{ RequestItems }->{ $table } = {};
-        
+
         # init / get keys
         my $k_ref = $get{ RequestItems }->{ $table }->{ Keys } = [];
         my @keys = ref( $t_ref ) eq 'ARRAY'
             ? @$t_ref
             : @{ $t_ref->{ keys } };
-        
+
         # get mapping for table
         my $m_ref = $table_map{ $table };
-        
+
         # get hash key
         my $hash_key = $m_ref->{ hash_key };
         my $hash_key_type = $self->_attrib_type( $table, $hash_key );
-        
+
         # get range key?
         my ( $range_key, $range_key_type );
         if ( defined $m_ref->{ range_key } ) {
             $range_key = $m_ref->{ range_key };
             $range_key_type = $self->_attrib_type( $table, $range_key );
         }
-        
+
         # build request items
         foreach my $key_ref( @keys ) {
             push @$k_ref, {
@@ -1405,18 +1406,18 @@ sub batch_get_item {
                 ( defined $range_key ? ( RangeKeyElement => { $range_key_type => $key_ref->{ $range_key }. '' } ) : () )
             };
         }
-        
+
         # having attributes limitation?
         if ( ref( $t_ref ) eq 'HASH' && defined $t_ref->{ attributes } ) {
             $get{ RequestItems }->{ $table }->{ AttributesToGet } = $t_ref->{ attributes };
         }
     }
-    
+
     # perform create
     my ( $res, $res_ok, $json_ref ) = $self->request( BatchGetItem => \%get, {
         max_retries => $args_ref->{ max_retries },
     } );
-    
+
     # return on success
     if ( $res_ok && defined $json_ref->{ Responses } ) {
 
@@ -1461,7 +1462,7 @@ sub batch_get_item {
         }
         return \%res;
     }
-    
+
     # set error
     $self->error( 'batch_get_item failed: '. $self->_extract_error_message( $res ) );
     return ;
@@ -1471,7 +1472,7 @@ sub batch_get_item {
 
 =head2 delete_item $table, $where_ref, [$args_ref]
 
-Deletes a single item by primary key (hash or hash+range key). 
+Deletes a single item by primary key (hash or hash+range key).
 
     # only with hash key
 
@@ -1520,10 +1521,10 @@ sub delete_item {
         max_retries => undef
     };
     $table = $self->_table_name( $table );
-    
+
     # check definition
     my $table_ref = $self->_check_table( "delete_item", $table );
-    
+
     # check primary keys
     croak "delete_item: Missing value for hash key '$table_ref->{ hash_key }'"
         unless defined $where_ref->{ $table_ref->{ hash_key } }
@@ -1533,26 +1534,26 @@ sub delete_item {
             defined $where_ref->{ $table_ref->{ range_key } }
             && length( $where_ref->{ $table_ref->{ range_key } } )
         );
-    
+
     # check other attributes
     $self->_check_keys( "delete_item: where-clause", $table, $where_ref );
-    
+
     # build delete
     my %delete = (
         TableName    => $table,
         Key          => {},
         ( $args_ref->{ return_old } ? ( ReturnValues => 'ALL_OLD' ) : () )
     );
-    
+
     # setup pk
     my %where = %$where_ref;
-    
+
     # for hash key
     my $hash_value = delete $where{ $table_ref->{ hash_key } };
     $delete{ Key }->{ HashKeyElement } = {
         $self->_attrib_type( $table, $table_ref->{ hash_key } ) => $hash_value
     };
-    
+
     # for range key
     if ( defined $table_ref->{ range_key } ) {
         my $range_value = delete $where{ $table_ref->{ range_key } };
@@ -1560,25 +1561,25 @@ sub delete_item {
             $self->_attrib_type( $table, $table_ref->{ range_key } ) => $range_value
         };
     }
-    
+
     # build filter for other attribs
     if ( keys %where ) {
         $self->_build_attrib_filter( $table, \%where, $delete{ Expected } = {} );
     }
-    
+
     # perform create
     my ( $res, $res_ok, $json_ref ) = $self->request( DeleteItem => \%delete, {
         max_retries => $args_ref->{ max_retries },
     } );
-    
+
     if ( $res_ok ) {
-        
+
         # use cache
         if ( $self->_cache_enabled( $args_ref ) ) {
             my $cache_key = $self->_cache_key_single( $table, $where_ref );
             $self->cache->remove( $cache_key );
         }
-        
+
         if ( defined $json_ref->{ Attributes } ) {
             my %res;
             foreach my $attrib( $self->_attribs( $table ) ) {
@@ -1589,7 +1590,7 @@ sub delete_item {
         }
         return {};
     }
-    
+
     $self->error( 'delete_item failed: '. $self->_extract_error_message( $res ) );
     return;
 }
@@ -1603,7 +1604,7 @@ Search in a table with hash AND range key.
     my ( $count, $items_ref, $next_start_keys_ref )
         = $ddb->qyery_items( some_table => { id => 123, my_range_id => { GT => 5 } } );
     print "Found $count items, where last id is ". $items_ref->[-1]->{ id }. "\n";
-    
+
     # iterate through al all "pages"
     my $next_start_keys_ref;
     do {
@@ -1727,12 +1728,12 @@ sub query_items {
         all         => 0,       # read all entries (runs possibly multiple queries)
         max_retries => undef,   # overwrite default max rewrites
     };
-    
+
     # check definition
     croak "query_items: Table '$table' does not exist in table definition"
         unless defined $self->tables->{ $table };
     my $table_ref = $self->tables->{ $table };
-    
+
     # die "query_items: Can run query_items only on tables with range key! '$table' does not have a range key.."
     #     unless defined $table_ref->{ range_key };
 
@@ -1743,10 +1744,10 @@ sub query_items {
         ScanIndexForward => $args_ref->{ backward } ? \0 : \1,
         ( defined $args_ref->{ limit } ? ( Limit => $args_ref->{ limit } ) : () ),
     );
-    
+
     # using filter
     my %filter = %$filter_ref;
-    
+
     if ( defined $filter{ $table_ref->{ hash_key } } ) {
         croak "query_items: Missing hash key value in filter-clause"
             unless defined $filter{ $table_ref->{ hash_key } };
@@ -1755,7 +1756,7 @@ sub query_items {
                 ( delete $filter{ $table_ref->{ hash_key } } ) . ''
         };
     }
-    
+
     # adding range to filter
     if ( defined $table_ref->{ range_key }) {
         croak "query_items: Missing range key value in filter-clause"
@@ -1773,47 +1774,47 @@ sub query_items {
             ComparisonOperator => uc( $op )
         };
     }
-    
+
     # too much keys
     croak "query_items: Cannot use keys ". join( ', ', sort keys %filter ). " in in filter - only hash and range key allowed."
         if keys %filter;
-    
-    
+
+
     # with start key?
     if( defined( my $start_key_ref = $args_ref->{ start_key } ) ) {
         $self->_check_keys( "query_items: start_key", $table, $start_key_ref );
         my $e_ref = $query{ ExclusiveStartKey } = {};
-        
+
         # add hash key
         if ( defined $start_key_ref->{ $table_ref->{ hash_key } } ) {
             my $type = $self->_attrib_type( $table, $table_ref->{ hash_key } );
             $e_ref->{ HashKeyElement } = { $type => $start_key_ref->{ $table_ref->{ hash_key } } };
         }
-        
+
         # add range key?
         if ( defined $table_ref->{ range_key } && defined $start_key_ref->{ $table_ref->{ range_key } } ) {
             my $type = $self->_attrib_type( $table, $table_ref->{ range_key } );
             $e_ref->{ RangeKeyElement } = { $type => $start_key_ref->{ $table_ref->{ range_key } } };
         }
     }
-    
+
     # only certain attributes
     if ( defined( my $attribs_ref = $args_ref->{ attributes } ) ) {
         my @keys = $self->_check_keys( "query_items: attributes", $table, $attribs_ref );
         $query{ AttributesToGet } = \@keys;
     }
-    
+
     # or count?
     elsif ( $args_ref->{ count } ) {
         $query{ Count } = \1;
     }
-    
+
     # perform query
     #print Dumper( { QUERY => \%query } );
     my ( $res, $res_ok, $json_ref ) = $self->request( Query => \%query, {
         max_retries => $args_ref->{ max_retries },
     } );
-    
+
     # format & return result
     if ( $res_ok && defined $json_ref->{ Items } ) {
         my @res;
@@ -1821,34 +1822,34 @@ sub query_items {
             push @res, $self->_format_item( $table, $from_ref );
         }
         my $count = $json_ref->{ Count };
-        
+
         # build start key for return or use
         my $next_start_key_ref;
         if ( defined $json_ref->{ LastEvaluatedKey } ) {
             $next_start_key_ref = {};
-            
+
             # add hash key to start key
             my $hash_type = $self->_attrib_type( $table, $table_ref->{ hash_key } );
             $next_start_key_ref->{ $table_ref->{ hash_key } } = $json_ref->{ LastEvaluatedKey }->{ HashKeyElement }->{ $hash_type };
-            
+
             # add range key to start key
             if ( defined $table_ref->{ range_key } && defined $json_ref->{ LastEvaluatedKey }->{ RangeKeyElement } ) {
                 my $range_type = $self->_attrib_type( $table, $table_ref->{ range_key } );
                 $next_start_key_ref->{ $table_ref->{ range_key } } = $json_ref->{ LastEvaluatedKey }->{ RangeKeyElement }->{ $range_type };
             }
         }
-        
+
         # cycle through all?
         if ( $args_ref->{ all } && $next_start_key_ref ) {
-            
+
             # make sure we do not run into a loop by comparing last and current start key
             my $new_start_key = join( ';', map { sprintf( '%s=%s', $_, $next_start_key_ref->{ $_ } ) } sort keys %$next_start_key_ref );
             my %key_cache     = defined $args_ref->{ _start_key_cache } ? %{ $args_ref->{ _start_key_cache } } : ();
             #print Dumper( { STARTKEY => $next_start_key_ref, LASTEVAL => $json_ref->{ LastEvaluatedKey }, KEYS => [ \%key_cache, $new_start_key ] } );
-            
+
             if ( ! defined $key_cache{ $new_start_key } ) {
                 $key_cache{ $new_start_key } = 1;
-                
+
                 # perform sub-query
                 my ( $sub_count, $sub_res_ref ) = $self->query_items( $table_orig, $filter_ref, {
                     %$args_ref,
@@ -1856,7 +1857,7 @@ sub query_items {
                     start_key        => $next_start_key_ref
                 } );
                 #print Dumper( { SUB_COUNT => $sub_count } );
-                
+
                 # add result
                 if ( $sub_count ) {
                     $count += $sub_count;
@@ -1864,10 +1865,10 @@ sub query_items {
                 }
             }
         }
-        
+
         return wantarray ? ( $count, \@res, $next_start_key_ref ) : \@res;
     }
-    
+
     # error
     $self->error( 'query_items failed: '. $self->_extract_error_message( $res ) );
     return;
@@ -1897,19 +1898,19 @@ sub scan_items {
         all         => 0,       # read all entries (runs possibly multiple queries)
         max_retries => undef,   # overwrite default max retries
     };
-    
+
     # check definition
     croak "scan_items: Table '$table' does not exist in table definition"
         unless defined $self->tables->{ $table };
     my $table_ref = $self->tables->{ $table };
-    
+
     # build put
     my %query = (
         TableName => $table,
         ScanFilter => {},
         ( defined $args_ref->{ limit } ? ( Limit => $args_ref->{ limit } ) : () ),
     );
-    
+
     # using filter
     if ( $filter_ref && keys %$filter_ref ) {
         my @filter_keys = $self->_check_keys( "scan_items: filter keys", $table, $filter_ref );
@@ -1939,77 +1940,77 @@ sub scan_items {
             }
         }
     }
-    
+
     # with start key?
     if( defined( my $start_key_ref = $args_ref->{ start_key } ) ) {
         $self->_check_keys( "scan_items: start_key", $table, $start_key_ref );
         my $e_ref = $query{ ExclusiveStartKey } = {};
-        
+
         # add hash key
         if ( defined $start_key_ref->{ $table_ref->{ hash_key } } ) {
             my $type = $self->_attrib_type( $table, $table_ref->{ hash_key } );
             $e_ref->{ HashKeyElement } = { $type => $start_key_ref->{ $table_ref->{ hash_key } } };
         }
-        
+
         # add range key?
         if ( defined $table_ref->{ range_key } && defined $start_key_ref->{ $table_ref->{ range_key } } ) {
             my $type = $self->_attrib_type( $table, $table_ref->{ range_key } );
             $e_ref->{ RangeKeyElement } = { $type => $start_key_ref->{ $table_ref->{ range_key } } };
         }
     }
-    
+
     # only certain attributes
     if ( defined( my $attribs_ref = $args_ref->{ attributes } ) ) {
         my @keys = $self->_check_keys( "scan_items: attributes", $table, $attribs_ref );
         $query{ AttributesToGet } = \@keys;
     }
-    
+
     # or count?
     elsif ( $args_ref->{ count } ) {
         $query{ Count } = \1;
     }
-    
+
     # perform query
     my ( $res, $res_ok, $json_ref ) = $self->request( Scan => \%query, {
         max_retries => $args_ref->{ max_retries },
     } );
-    
+
     # format & return result
     if ( $res_ok && defined $json_ref->{ Items } ) {
         my @res;
         foreach my $from_ref( @{ $json_ref->{ Items } } ) {
             push @res, $self->_format_item( $table, $from_ref );
         }
-        
+
         my $count = $json_ref->{ Count };
-        
+
         # build start key for return or use
         my $next_start_key_ref;
         if ( defined $json_ref->{ LastEvaluatedKey } ) {
             $next_start_key_ref = {};
-            
+
             # add hash key to start key
             my $hash_type = $self->_attrib_type( $table, $table_ref->{ hash_key } );
             $next_start_key_ref->{ $table_ref->{ hash_key } } = $json_ref->{ LastEvaluatedKey }->{ HashKeyElement }->{ $hash_type };
-            
+
             # add range key to start key
             if ( defined $table_ref->{ range_key } && defined $json_ref->{ LastEvaluatedKey }->{ RangeKeyElement } ) {
                 my $range_type = $self->_attrib_type( $table, $table_ref->{ range_key } );
                 $next_start_key_ref->{ $table_ref->{ range_key } } = $json_ref->{ LastEvaluatedKey }->{ RangeKeyElement }->{ $range_type };
             }
         }
-        
+
         # cycle through all?
         if ( $args_ref->{ all } && $next_start_key_ref ) {
-            
+
             # make sure we do not run into a loop by comparing last and current start key
             my $new_start_key = join( ';', map { sprintf( '%s=%s', $_, $next_start_key_ref->{ $_ } ) } sort keys %$next_start_key_ref );
             my %key_cache     = defined $args_ref->{ _start_key_cache } ? %{ $args_ref->{ _start_key_cache } } : ();
             #print Dumper( { STARTKEY => $next_start_key_ref, LASTEVAL => $json_ref->{ LastEvaluatedKey }, KEYS => [ \%key_cache, $new_start_key ] } );
-            
+
             if ( ! defined $key_cache{ $new_start_key } ) {
                 $key_cache{ $new_start_key } = 1;
-                
+
                 # perform sub-query
                 my ( $sub_count, $sub_res_ref ) = $self->scan_items( $table_orig, $filter_ref, {
                     %$args_ref,
@@ -2017,7 +2018,7 @@ sub scan_items {
                     start_key        => $next_start_key_ref
                 } );
                 #print Dumper( { SUB_COUNT => $sub_count } );
-                
+
                 # add result
                 if ( $sub_count ) {
                     $count += $sub_count;
@@ -2025,10 +2026,10 @@ sub scan_items {
                 }
             }
         }
-        
+
         return wantarray ? ( $count, \@res, $next_start_key_ref ) : \@res;
     }
-    
+
     # error
     $self->error( 'scan_items failed: '. $self->_extract_error_message( $res ) );
     return;
@@ -2047,19 +2048,19 @@ sub request {
     $args_ref ||= {
         max_retries => undef
     };
-    
+
     # assure security token existing
     unless( $self->_init_security_token() ) {
         my %error = ( error => $self->error() );
         return wantarray ? ( undef, 0, \%error ) : \%error;
     }
-    
+
     # convert to string, if required
     $json = $self->json->encode( $json ) if ref $json;
-    
+
     # get date
     my $http_date = DateTime::Format::HTTP->format_datetime( DateTime->now );
-    
+
     # build signable content
     #$json is already utf8 encoded via json encode
     my $sign_content = encode_utf8(join( "\n",
@@ -2072,10 +2073,10 @@ sub request {
     )) . "\n" . $json ;
     my $signature = hmac_sha256_base64( sha256( $sign_content ), $self->_credentials->{ SecretAccessKey } );
     $signature .= '=' while( length( $signature ) % 4 != 0 );
-    
+
     # build request
     my $request = HTTP::Request->new( POST => 'http://'. $self->host. '/' );
-    
+
     # .. setup headers
     $request->header( host => $self->host );
     $request->header( 'x-amz-date' => $http_date );
@@ -2088,21 +2089,21 @@ sub request {
     ) );
     $request->header( 'x-amz-security-token' => $self->_credentials->{ SessionToken } );
     $request->header( 'content-type' => 'application/x-amz-json-1.0' );
-    
+
     # .. add content
     $request->content( $json );
-    
+
     my ( $json_ref, $response );
     my $tries = defined $args_ref->{ max_retries }
         ? $args_ref->{ max_retries }
         : $self->max_retries + 1;
     while( 1 ) {
-        
+
         # run request
         $response = $self->lwp->request( $request );
         $ENV{ DYNAMO_DB_DEBUG } && warn Dumper( $response );
         $ENV{ DYNAMO_DB_DEBUG_KEEPALIVE } && warn "  LWP keepalives in use: ", scalar($self->_lwpcache()->get_connections()), "/", $self->_lwpcache()->total_capacity(), "\n";
-        
+
         # get json
         $json_ref = $response
             ? eval { $self->json->decode( $response->decoded_content ) } || { error => "Failed to parse JSON result" }
@@ -2114,18 +2115,18 @@ sub request {
         }
         last;
     }
-    
-    
+
+
     # handle error
     if ( defined $json_ref->{ error } && $json_ref->{ error } ) {
         $self->error( $json_ref->{ error } );
     }
-    
+
     # handle exception
     elsif ( defined $json_ref->{ __type } && $json_ref->{ __type } =~ /Exception/ && $json_ref->{ Message } ) {
         $self->error( $json_ref->{ Message } );
     }
-    
+
     return wantarray ? ( $response, $response ? $response->is_success : 0, $json_ref ) : $json_ref;
 }
 
@@ -2156,27 +2157,27 @@ sub error {
 
 sub _init_security_token {
     my ( $self ) = @_;
-    
+
     # wheter has valid credentials
     if ( $self->_has_credentials() ) {
         my $dt = DateTime->now( time_zone => 'local' )->add( seconds => 5 );
         return 1 if $dt < $self->_credentials_expire;
     }
-    
+
     # build aws signed request
     $self->_aws_signer( Net::Amazon::AWSSign->new(
         $self->access_key, $self->secret_key ) )
         unless $self->_has_aws_signer;
     my $url = $self->_aws_signer->addRESTSecret( $self->_security_token_url );
-    
+
     # get token
     my $res = $self->lwp->get( $url );
-    
+
     # got response
     if ( $res->is_success) {
         my $content = $res->decoded_content;
         my $result_ref = XMLin( $content );
-        
+
         # got valid result
         if( ref $result_ref && defined $result_ref->{ GetSessionTokenResult }
             && defined $result_ref->{ GetSessionTokenResult }
@@ -2184,7 +2185,7 @@ sub _init_security_token {
         ) {
             # SessionToken, AccessKeyId, Expiration, SecretAccessKey
             my $cred_ref = $result_ref->{ GetSessionTokenResult }->{ Credentials };
-            if ( ref( $cred_ref ) 
+            if ( ref( $cred_ref )
                 && defined $cred_ref->{ SessionToken }
                 && defined $cred_ref->{ AccessKeyId }
                 && defined $cred_ref->{ SecretAccessKey }
@@ -2198,7 +2199,7 @@ sub _init_security_token {
                 my $expire = $pattern->parse_datetime( $cred_ref->{ Expiration } );
                 $expire->set_time_zone( 'local' );
                 $self->_credentials_expire( $expire );
-                
+
                 # set credentials
                 $self->_credentials( $cred_ref );
                 return 1;
@@ -2212,7 +2213,7 @@ sub _init_security_token {
         my $content = eval { $res->decoded_content } || "No Content";
         $self->error( "Failed to fetch credentials: ". $res->status_line. " ($content)" );
     }
-    
+
     return 0;
 }
 
@@ -2230,7 +2231,7 @@ sub _check_table {
     }
     croak "$meth: Table '$table' not defined"
         unless defined $self->tables->{ $table };
-    
+
     return $self->tables->{ $table };
 }
 
@@ -2243,7 +2244,7 @@ sub _check_table {
 sub _check_keys {
     my ( $self, $meth, $table, $key_ref ) = @_;
     my $table_ref = $self->_check_table( $meth, $table );
-    
+
     my @keys = ref( $key_ref )
         ? ( ref( $key_ref ) eq 'ARRAY'
             ? @$key_ref
@@ -2251,11 +2252,11 @@ sub _check_keys {
         )
         : ( $key_ref )
     ;
-    
+
     my @invalid_keys = grep { ! defined $table_ref->{ attributes }->{ $_ } } @keys;
     croak "$meth: Invalid keys: ". join( ', ', @invalid_keys )
         if @invalid_keys;
-    
+
     return wantarray ? @keys : \@keys;
 }
 
