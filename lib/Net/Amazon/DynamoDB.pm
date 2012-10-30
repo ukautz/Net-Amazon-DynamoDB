@@ -1288,7 +1288,7 @@ sub get_item {
     # return on success
     my $item_ref = $self->_format_item( $table, $json_ref->{ Item } ) if $res_ok && defined $json_ref->{ Item };
     if ( $use_cache ) {
-        $self->cache->freeze( $cache_key, $item_ref );
+        $self->cache->freeze( $cache_key, $item_ref ) if $item_ref;
     }
     return $item_ref;
 
