@@ -63,7 +63,7 @@ See L<https://github.com/ukautz/Net-Amazon-DynamoDB> for latest release.
 use Moose;
 
 use v5.10;
-use version 0.74; our $VERSION = qv( "v0.1.14" );
+use version 0.74; our $VERSION = qv( "v0.1.15" );
 
 use Carp qw/ croak /;
 use Data::Dumper;
@@ -209,7 +209,7 @@ has api_version => ( isa => 'Str', is => 'rw', default => '20111205' );
 
 =head2 read_consistent
 
-Whether reads (get_item) consistent per default or not. This does not affcect batch_get_item or scan_items or query_items, which are always eventually consistent.
+Whether reads (get_item, batch_get_item) consistent per default or not. This does not affect scan_items or query_items, which are always eventually consistent.
 
 Default: 0 (eventually consistent)
 
@@ -1358,9 +1358,10 @@ sub batch_get_item {
     my ( $self, $tables_ref, $args_ref ) = @_;
     $args_ref ||= {
         max_retries => undef,
-        process_all => undef
+        process_all => undef,
+        consistent  => undef
     };
-    
+    $args_ref->{ consistent } //= $self->read_consistent();
     
     # check definition
     my %table_map;
@@ -1409,6 +1410,11 @@ sub batch_get_item {
         # having attributes limitation?
         if ( ref( $t_ref ) eq 'HASH' && defined $t_ref->{ attributes } ) {
             $get{ RequestItems }->{ $table }->{ AttributesToGet } = $t_ref->{ attributes };
+        }
+
+        # using consistent read?
+        if ( $args_ref->{ consistent } ) {
+            $get{ RequestItems }->{ $table }->{ ConsistentRead } = \1;
         }
     }
     
