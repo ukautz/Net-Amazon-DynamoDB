@@ -1,4 +1,7 @@
-0.1.15	2012-10-10
+0.1.16	2012-11-06
+	* Fix from fayland for boken merge
+
+0.1.15	2012-11-05
 	* Added patches from fayland (fixed: no cache when undef result)
 	* Implemented consitent read attribute in batch_get_item()
 
