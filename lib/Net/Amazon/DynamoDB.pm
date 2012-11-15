@@ -1286,14 +1286,17 @@ sub get_item {
     } );
 
     # return on success
-    my $item_ref = $self->_format_item( $table, $json_ref->{ Item } ) if $res_ok && defined $json_ref->{ Item };
-    if ( $use_cache ) {
-        $self->cache->freeze( $cache_key, $item_ref ) if $item_ref;
+    if ($res_ok) {
+        if (defined $json_ref->{ Item }) {
+            my $item_ref = $self->_format_item( $table, $json_ref->{ Item } );
+            if ( $use_cache ) {
+                $self->cache->freeze( $cache_key, $item_ref );
+            }
+            return $item_ref;
+        }
+        return;
+        # return on success, but nothing received
     }
-    return $item_ref;
-
-    # return on success, but nothing received
-    return undef if $res_ok;
 
     # set error
     $self->error( 'get_item failed: '. $self->_extract_error_message( $res ) );
