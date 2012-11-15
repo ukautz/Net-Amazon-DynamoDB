@@ -872,6 +872,12 @@ sub batch_write_item {
                         }
                         $request_ref->{ $key } = { $type => $value };
                     }
+
+                    # no matter success or failure, remove it first
+                    if ( $self->_cache_enabled( $args_ref ) ) {
+                        my $cache_key = $self->_cache_key_single( $table, $put_ref );
+                        $self->cache->remove( $cache_key );
+                    }
                 }
             }
 
@@ -880,6 +886,12 @@ sub batch_write_item {
                 foreach my $delete_ref( @operations ) {
                     push @$table_requests_ref, { 'DeleteRequest' => { Key => my $request_ref = {} } };
                     $self->_build_pk_filter( $table, $delete_ref, $request_ref );
+
+                    # no matter success or failure, remove it first
+                    if ( $self->_cache_enabled( $args_ref ) ) {
+                        my $cache_key = $self->_cache_key_single( $table, $delete_ref );
+                        $self->cache->remove( $cache_key );
+                    }
                 }
             }
         }
