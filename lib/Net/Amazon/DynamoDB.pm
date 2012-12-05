@@ -2052,6 +2052,10 @@ sub scan_items {
         return wantarray ? ( $count, \@res, $next_start_key_ref ) : \@res;
     }
 
+    if ( $args_ref->{ count } ) { # do not have $json_ref->{ Items }
+        return $json_ref if $res_ok;
+    }
+
     # error
     $self->error( 'scan_items failed: '. $self->_extract_error_message( $res ) );
     return;
