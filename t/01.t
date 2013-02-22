@@ -165,31 +165,34 @@ SKIP: {
                 'Returned binary data from batch write matches'
             );
 
-            # batch get multuiple
-            my $batch_ref = $ddb->batch_get_item( {
-                $table1 => [
-                    { id => 1 },
-                    { id => 10 }
-                ],
-                $table2 => [
-                    { id => 2, range_id => 1 },
-                    { id => 1, range_id => 2 },
-                ],
-                $table3 => [
-                    { id => 1 },
-                ],
-            } );
+            # Test batch get with derive_table on and off
+            for my $derive_table ( 0, 1 ) {
+                $ddb->derive_table($derive_table);
+                # batch get multiple
+                my $batch_ref = $ddb->batch_get_item( {
+                    $table1 => [
+                        { id => 1 },
+                        { id => 10 }
+                    ],
+                    $table2 => [
+                        { id => 2, range_id => 1 },
+                        { id => 1, range_id => 2 },
+                    ],
+                    $table3 => [
+                        { id => 1 },
+                    ],
+                } );
 
-            #print Dumper( $batch_ref );
-            ok(
-                defined $batch_ref->{ $table1 } && scalar( @{ $batch_ref->{ $table1 } } ) == 2
-                && defined $batch_ref->{ $table2 } && scalar( @{ $batch_ref->{ $table2 } } ) == 2
-                && defined $batch_ref->{ $table3 } && scalar( @{ $batch_ref->{ $table3 } } ) == 1,
-                "Found 5 entries from $table1, $table2 and $table3 with batch get"
-            );
+                #print Dumper( $batch_ref );
+                ok(
+                    defined $batch_ref->{ $table1 } && scalar( @{ $batch_ref->{ $table1 } } ) == 2
+                    && defined $batch_ref->{ $table2 } && scalar( @{ $batch_ref->{ $table2 } } ) == 2
+                    && defined $batch_ref->{ $table3 } && scalar( @{ $batch_ref->{ $table3 } } ) == 1,
+                    "Found 5 entries from $table1, $table2 and $table3 with batch get (derive_table = $derive_table)"
+                );
 
-            ok( $batch_ref->{ $table3 }->[0]->{data} eq $data, 'Binary data returned from batch_get matches');
-            
+                ok( $batch_ref->{ $table3 }->[0]->{data} eq $data, "Binary data returned from batch_get matches (derive_table = $derive_table)");
+            }
 
             # clean up
             foreach my $table( $table1, $table2, $table3 ) {
