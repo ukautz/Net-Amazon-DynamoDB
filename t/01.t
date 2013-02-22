@@ -142,6 +142,29 @@ SKIP: {
             my $query_ref = $ddb->query_items( $table2 => { id => 1, range_id => { GT => 5 } } );
             ok( $query_ref && scalar( @$query_ref ) == 3, "Query for 3 items in $table2" );
             
+            # batch_write test
+            $ddb->batch_write_item({
+                $table1 => {
+                  put => [ { id => 11, name => "11entry" } ],
+                },
+                $table3 => {
+                  put => [ { id => 2, data => $data } ],
+                },
+            });
+
+            # Get string back
+            my $batched_str_ref = $ddb->get_item( $table1 => { id => 11 } );
+            ok( $batched_str_ref && $batched_str_ref->{ name } eq '11entry',
+                'Returned string data from batch write matches'
+            );
+
+
+            # Get binary back
+            my $batched_bin_ref = $ddb->get_item( $table3 => { id => 2 } );
+            ok( $batched_bin_ref && $batched_bin_ref->{ data } eq $data,
+                'Returned binary data from batch write matches'
+            );
+
             # batch get multuiple
             my $batch_ref = $ddb->batch_get_item( {
                 $table1 => [

@@ -856,14 +856,7 @@ sub batch_write_item {
                     # build the item
                     foreach my $key( keys %$put_ref ){
                         my $type = $self->_attrib_type( $table, $key );
-                        my $value;
-                        if ( $type eq 'SS' || $type eq 'NS' ) {
-                            my @values = map { $_. '' } ( ref( $put_ref->{ $key } ) ? @{ $put_ref->{ $key } } : () );
-                            $value = \@values;
-                        }
-                        else {
-                            $value = $put_ref->{ $key } .'';
-                        }
+                        my $value = $self->_build_value($put_ref->{ $key },$type);
                         $request_ref->{ $key } = { $type => $value };
                     }
 
