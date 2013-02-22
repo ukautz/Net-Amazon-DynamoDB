@@ -23,8 +23,9 @@ See L<https://github.com/ukautz/Net-Amazon-DynamoDB> for latest release.
             sometable => {
                 hash_key   => 'id',
                 attributes => {
-                    id   => 'N',
-                    name => 'S'
+                    id          => 'N',
+                    name        => 'S',
+                    binary_data => 'B'
                 }
             },
 
@@ -48,8 +49,9 @@ See L<https://github.com/ukautz/Net-Amazon-DynamoDB> for latest release.
 
     # insert something into tables
     $ddb->put_item( sometable => {
-        id   => 5,
-        name => 'bla'
+        id         => 5,
+        name       => 'bla',
+        binary_data => $some_data
     } ) or die $ddb->error;
     $ddb->put_item( sometable => {
         id        => 5,
@@ -1088,6 +1090,8 @@ sub update_item {
 
         # replace or add for array types
         elsif ( $type =~ /^[NS]S$/ ) {
+
+            #TODO: This in'st working for binary I don't think.
 
             # add \[ qw/ value1 value2 / ]
             if ( ref( $value ) eq 'REF' ) {
@@ -2158,14 +2162,17 @@ sub error {
 sub _build_value {
   my ( $self, $value, $type ) = @_;
 
+    # Deal with sets of other types
     if ( $type =~ /^(.)S$/ ) {
         my @values = map { $self->_build_value($_,$1) }
                      ( ref( $value  ) ? @{ $value } : () );
         return \@values;
     }
+    # Binary Types: Base 64 Encode
     elsif ( $type eq 'B' ) {
         return encode_base64($value,'') . '';
     }
+    # Numeric and String: Force to string
     else {
         return $value . '';
     }
@@ -2342,7 +2349,7 @@ sub _build_attrib_filter {
 
 #
 # _attrib_type $table, $key
-#   Returns type ("S", "N", "NS", "SS") of existing attribute in table
+#   Returns type ("S", "N", "B", "NS", "SS", "BS") of existing attribute in table
 #
 
 sub _attrib_type {
