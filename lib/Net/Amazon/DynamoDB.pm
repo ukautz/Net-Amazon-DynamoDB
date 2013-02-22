@@ -1081,22 +1081,21 @@ sub update_item {
         }
 
         # replace for scalar
-        elsif ( $type eq 'N' || $type eq 'S' ) {
+        elsif ( $type eq 'N' || $type eq 'S' || $type eq 'B' ) {
             $update{ AttributeUpdates }->{ $key } = {
-                Value  => { $type => $value. '' },
+                Value  => { $type => $self->_build_value($value,$type) },
                 Action => 'PUT'
             };
         }
 
         # replace or add for array types
-        elsif ( $type =~ /^[NS]S$/ ) {
-
-            #TODO: This in'st working for binary I don't think.
+        elsif ( $type =~ /^([NSB])S$/ ) {
+            my $base_type = $1;
 
             # add \[ qw/ value1 value2 / ]
             if ( ref( $value ) eq 'REF' ) {
                 $update{ AttributeUpdates }->{ $key } = {
-                    Value  => { $type => [ map { "$_" } @$$value ] },
+                    Value  => { $type => [ map { $self->_build_value($_,$base_type) } @$$value ] },
                     Action => 'ADD'
                 };
             }
@@ -1104,7 +1103,7 @@ sub update_item {
             # replace [ qw/ value1 value2 / ]
             else {
                 $update{ AttributeUpdates }->{ $key } = {
-                    Value  => { $type => [ map { "$_" } @$value ] },
+                    Value  => { $type => [ map { $self->_build_value($_,$base_type) } @$value ] },
                     Action => 'PUT'
                 };
             }

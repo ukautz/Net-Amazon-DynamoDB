@@ -110,12 +110,19 @@ SKIP: {
             my $bin_read_ref = $ddb->get_item( $table3 => { id => 1 } );
             ok( $bin_read_ref && $bin_read_ref->{ data } eq $data, 'Returned binary data matches' );
 
+            my $data2 = pack("C*",map { $_ % 256 } 0..500);
+
+            my $update_ref = $ddb->update_item( $table3 => { data => $data2 }, { id => 1 }, {
+                return_mode => 'ALL_NEW'
+            } );
+            ok( $update_ref && $update_ref->{ data } eq $data2, "Binary update in $table3 ok" );
+
             # read test
             my $read_ref = $ddb->get_item( $table1 => { id => 1 } );
             ok( $read_ref && $read_ref->{ id } == 1 && $read_ref->{ name } eq 'First entry', "First entry from $table1 read" );
             
             # update test
-            my $update_ref = $ddb->update_item( $table1 => { name => "Updated first entry" }, { id => 1 }, {
+            $update_ref = $ddb->update_item( $table1 => { name => "Updated first entry" }, { id => 1 }, {
                 return_mode => 'ALL_NEW'
             } );
             ok( $update_ref && $update_ref->{ name } eq 'Updated first entry', "Update in $table1 ok" );
@@ -179,7 +186,7 @@ SKIP: {
                         { id => 1, range_id => 2 },
                     ],
                     $table3 => [
-                        { id => 1 },
+                        { id => 2 },
                     ],
                 } );
 
