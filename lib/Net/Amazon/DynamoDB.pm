@@ -78,6 +78,7 @@ use LWP::ConnCache;
 use Net::Amazon::AWSSign;
 use Time::HiRes qw/ usleep /;
 use XML::Simple qw/ XMLin /;
+use MIME::Base64;
 use Encode;
 
 =head1 CLASS ATTRIBUTES
@@ -116,8 +117,8 @@ has tables => ( isa => 'HashRef[HashRef]', is => 'rw', required => 1, trigger =>
         # check attributes
         while( my( $attr_name, $attr_type ) = each %{ $table_ref->{ attributes } } ) {
             croak "Wrong data type for attribute '$attr_name' in table '$table': Got '$attr_type' was"
-                . " expecting 'S' or 'N' or 'SS' or 'NS'"
-                unless $attr_type =~ /^[NS]S?$/;
+                . " expecting 'S', 'N', 'B', 'SS', 'NS', or 'BS'"
+                unless $attr_type =~ /^[BNS]S?$/;
         }
     }
 
@@ -712,12 +713,13 @@ sub put_item {
     foreach my $key( keys %$item_ref ){
         my $type = $self->_attrib_type( $table, $key );
         my $value;
-        if ( $type eq 'SS' || $type eq 'NS' ) {
-            my @values = map { $_. '' } ( ref( $item_ref->{ $key } ) ? @{ $item_ref->{ $key } } : () );
+        if ( $type =~ /^(.)S$/ ) {
+            my @values = map { $self->_build_value($_,$1) }
+                         ( ref( $item_ref->{ $key } ) ? @{ $item_ref->{ $key } } : () );
             $value = \@values;
         }
         else {
-            $value = $item_ref->{ $key } .'';
+            $value = $self->_build_value($item_ref->{ $key },$type);
         }
         $put{ Item }->{ $key } = { $type => $value };
     }
@@ -2170,7 +2172,19 @@ sub error {
     return ;
 }
 
+#
+# _build_value
+#   Creates the value for inclusion in JSON going to Dynamo
+sub _build_value {
+  my ( $self, $value, $type ) = @_;
 
+  if ( $type eq 'B' ) {
+    return encode_base64($value,'') . '';
+  }
+  else {
+    return $value . '';
+  }
+}
 
 #
 # _init_security_token

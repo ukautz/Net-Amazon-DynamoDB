@@ -36,6 +36,7 @@ SKIP: {
             
             my $table1 = $table_prefix. 'table1';
             my $table2 = $table_prefix. 'table2';
+            my $table3 = $table_prefix. 'table3';
             
             # create ddb
             my $ddb = eval { Net::Amazon::DynamoDB->new(
@@ -60,13 +61,20 @@ SKIP: {
                             attrib1 => 'S',
                             attrib2 => 'S'
                         }
-                    }
+                    },
+                    $table3 => {
+                        hash_key => 'id',
+                        attributes  => {
+                            id   => 'N',
+                            data => 'B'
+                        }
+                    },
                 }
             ) };
             BAIL_OUT( "Failed to instantiate Net::Amazon::DynamoDB: $@" ) if $@;
             
             # create tables
-            foreach my $table( $table1, $table2 ) {
+            foreach my $table( $table1, $table2, $table3 ) {
                 if ( $ddb->exists_table( $table ) ) {
                     pass( "Table $table already exists" );
                     next;
@@ -94,6 +102,10 @@ SKIP: {
             # put test
             ok( $ddb->put_item( $table1 => { id => 1, name => "First entry" } ), "First entry in $table1 created" );
             
+            # put large binary
+            my $data = pack("C*",map { $_ % 256 } 0..65526);
+            ok( $ddb->put_item( $table3 => { id => 1, data => $data } ), "Large binary entry in in $table3 created" );
+
             # read test
             my $read_ref = $ddb->get_item( $table1 => { id => 1 } );
             ok( $read_ref && $read_ref->{ id } == 1 && $read_ref->{ name } eq 'First entry', "First entry from $table1 read" );
@@ -137,6 +149,7 @@ SKIP: {
                     { id => 1, range_id => 2 },
                 ]
             } );
+
             #print Dumper( $batch_ref );
             ok(
                 defined $batch_ref->{ $table1 } && scalar( @{ $batch_ref->{ $table1 } } ) == 2
@@ -145,7 +158,7 @@ SKIP: {
             );
             
             # clean up
-            foreach my $table( $table1, $table2 ) {
+            foreach my $table( $table1, $table2, $table3 ) {
                 ok( $ddb->delete_table( $table ), "Table $table delete initialized" );
                 
                 foreach my $num( 1..60 ) {
