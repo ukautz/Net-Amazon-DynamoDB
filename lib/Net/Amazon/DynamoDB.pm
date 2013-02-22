@@ -712,15 +712,7 @@ sub put_item {
     # build the item
     foreach my $key( keys %$item_ref ){
         my $type = $self->_attrib_type( $table, $key );
-        my $value;
-        if ( $type =~ /^(.)S$/ ) {
-            my @values = map { $self->_build_value($_,$1) }
-                         ( ref( $item_ref->{ $key } ) ? @{ $item_ref->{ $key } } : () );
-            $value = \@values;
-        }
-        else {
-            $value = $self->_build_value($item_ref->{ $key },$type);
-        }
+        my $value = $self->_build_value($item_ref->{ $key },$type);
         $put{ Item }->{ $key } = { $type => $value };
     }
 
@@ -2173,12 +2165,17 @@ sub error {
 sub _build_value {
   my ( $self, $value, $type ) = @_;
 
-  if ( $type eq 'B' ) {
-    return encode_base64($value,'') . '';
-  }
-  else {
-    return $value . '';
-  }
+    if ( $type =~ /^(.)S$/ ) {
+        my @values = map { $self->_build_value($_,$1) }
+                     ( ref( $value  ) ? @{ $value } : () );
+        return \@values;
+    }
+    elsif ( $type eq 'B' ) {
+        return encode_base64($value,'') . '';
+    }
+    else {
+        return $value . '';
+    }
 }
 
 #
