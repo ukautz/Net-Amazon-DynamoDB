@@ -1476,12 +1476,7 @@ sub batch_get_item {
             my $items_ref = $json_ref->{ Responses }->{ $table };
             $res{ $table_out } = [];
             foreach my $item_ref( @{ $items_ref->{ Items } } ) {
-                my %res_item;
-                foreach my $attrib( keys %$item_ref ) {
-                    my $type = $self->_attrib_type( $table, $attrib );
-                    $res_item{ $attrib } = $item_ref->{ $attrib }->{ $type };
-                }
-                push @{ $res{ $table_out } }, \%res_item;
+                push @{ $res{ $table_out } }, $self->_format_item($table,$item_ref);
             }
         }
         return \%res;

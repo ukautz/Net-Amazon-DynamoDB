@@ -151,15 +151,21 @@ SKIP: {
                 $table2 => [
                     { id => 2, range_id => 1 },
                     { id => 1, range_id => 2 },
-                ]
+                ],
+                $table3 => [
+                    { id => 1 },
+                ],
             } );
 
             #print Dumper( $batch_ref );
             ok(
                 defined $batch_ref->{ $table1 } && scalar( @{ $batch_ref->{ $table1 } } ) == 2
-                && defined $batch_ref->{ $table2 } && scalar( @{ $batch_ref->{ $table2 } } ) == 2,
-                "Found 4 entries from $table1 and $table2 with batch get"
+                && defined $batch_ref->{ $table2 } && scalar( @{ $batch_ref->{ $table2 } } ) == 2
+                && defined $batch_ref->{ $table3 } && scalar( @{ $batch_ref->{ $table3 } } ) == 1,
+                "Found 5 entries from $table1, $table2 and $table3 with batch get"
             );
+
+            ok( $batch_ref->{ $table3 }->[0]->{data} eq $data, 'Binary data returned from batch_get matches');
             
 
             # clean up
