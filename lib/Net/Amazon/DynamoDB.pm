@@ -2404,22 +2404,51 @@ sub _format_item {
             my $key_name = $table_ref->{ "${key}_key" };
             my $key_type = $table_ref->{ attributes }->{ $key_name };
             $formatted{ $key_name } = $from_ref->{ ucfirst( $key ). 'KeyElement' }->{ $key_type };
+
+            if ( $key_type eq 'B' ) {
+                $formatted{ $key_name } = decode_base64( $formatted{ $key_name } );
+            }
+            elsif ( $key_name = 'BS' ) {
+                $formatted{ $key_name } = [ map { decode_base64($_) } @{ $formatted{ $key_name } } ];
+            }
         }
     }
     else {
         if ( $self->derive_table() ) {
             while ( my ( $key, $value ) = each %$from_ref ) {
-	            $formatted{$key} = ( $value->{'S'} || $value->{'N'} || $value->{'NS'} || $value->{'SS'} );
-	        }
+                if ( exists($value->{B}) ) {
+                    $formatted{$key} = decode_base64($value->{B});
+                }
+                elsif ( exists($value->{BS}) ) {
+                    $formatted{$key} = [ map { decode_base64($_) } @{ $value->{BS} } ];
+                }
+                else {
+                    $formatted{$key} = ( $value->{'S'} || $value->{'N'} || $value->{'NS'} || $value->{'SS'} );
+                }
+            }
         }
         else {
             while( my( $attrib, $type ) = each %{ $table_ref->{ attributes } } ) {
                 next unless defined $from_ref->{ $attrib };
-                $formatted{ $attrib } = $from_ref->{ $attrib }->{ $type };
+                if ( $type eq 'BS' ) {
+                    $formatted{ $attrib } = $self->_decode_binary_set( $from_ref->{ $attrib }->{ $type } );
+                }
+                elsif ( $type eq 'B' ) {
+                    $formatted{ $attrib } = decode_base64( $from_ref->{ $attrib }->{ $type } );
+                }
+                else {
+                    $formatted{ $attrib } = $from_ref->{ $attrib }->{ $type };
+                }
             }
         }
     }
     return \%formatted;
+}
+
+sub _decode_binary_set {
+    my ( $self, $bs_ref ) = shift;
+
+    return [ map { decode_base64($_) } @$bs_ref ];
 }
 
 

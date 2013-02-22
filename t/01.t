@@ -106,6 +106,10 @@ SKIP: {
             my $data = pack("C*",map { $_ % 256 } 0..65526);
             ok( $ddb->put_item( $table3 => { id => 1, data => $data } ), "Large binary entry in in $table3 created" );
 
+            # Get binary back
+            my $bin_read_ref = $ddb->get_item( $table3 => { id => 1 } );
+            ok( $bin_read_ref && $bin_read_ref->{ data } eq $data, 'Returned binary data matches' );
+
             # read test
             my $read_ref = $ddb->get_item( $table1 => { id => 1 } );
             ok( $read_ref && $read_ref->{ id } == 1 && $read_ref->{ name } eq 'First entry', "First entry from $table1 read" );
@@ -157,6 +161,7 @@ SKIP: {
                 "Found 4 entries from $table1 and $table2 with batch get"
             );
             
+
             # clean up
             foreach my $table( $table1, $table2, $table3 ) {
                 ok( $ddb->delete_table( $table ), "Table $table delete initialized" );
