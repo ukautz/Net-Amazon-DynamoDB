@@ -36,6 +36,7 @@ SKIP: {
             
             my $table1 = $table_prefix. 'table1';
             my $table2 = $table_prefix. 'table2';
+            my $table3 = $table_prefix. 'table3';
             
             # create ddb
             my $ddb = eval { Net::Amazon::DynamoDB->new(
@@ -60,13 +61,20 @@ SKIP: {
                             attrib1 => 'S',
                             attrib2 => 'S'
                         }
-                    }
+                    },
+                    $table3 => {
+                        hash_key => 'id',
+                        attributes  => {
+                            id   => 'N',
+                            data => 'B'
+                        }
+                    },
                 }
             ) };
             BAIL_OUT( "Failed to instantiate Net::Amazon::DynamoDB: $@" ) if $@;
             
             # create tables
-            foreach my $table( $table1, $table2 ) {
+            foreach my $table( $table1, $table2, $table3 ) {
                 if ( $ddb->exists_table( $table ) ) {
                     pass( "Table $table already exists" );
                     next;
@@ -94,12 +102,27 @@ SKIP: {
             # put test
             ok( $ddb->put_item( $table1 => { id => 1, name => "First entry" } ), "First entry in $table1 created" );
             
+            # put large binary
+            my $data = pack("C*",map { $_ % 256 } 0..65526);
+            ok( $ddb->put_item( $table3 => { id => 1, data => $data } ), "Large binary entry in in $table3 created" );
+
+            # Get binary back
+            my $bin_read_ref = $ddb->get_item( $table3 => { id => 1 } );
+            ok( $bin_read_ref && $bin_read_ref->{ data } eq $data, 'Returned binary data matches' );
+
+            my $data2 = pack("C*",map { $_ % 256 } 0..500);
+
+            my $update_ref = $ddb->update_item( $table3 => { data => $data2 }, { id => 1 }, {
+                return_mode => 'ALL_NEW'
+            } );
+            ok( $update_ref && $update_ref->{ data } eq $data2, "Binary update in $table3 ok" );
+
             # read test
             my $read_ref = $ddb->get_item( $table1 => { id => 1 } );
             ok( $read_ref && $read_ref->{ id } == 1 && $read_ref->{ name } eq 'First entry', "First entry from $table1 read" );
             
             # update test
-            my $update_ref = $ddb->update_item( $table1 => { name => "Updated first entry" }, { id => 1 }, {
+            $update_ref = $ddb->update_item( $table1 => { name => "Updated first entry" }, { id => 1 }, {
                 return_mode => 'ALL_NEW'
             } );
             ok( $update_ref && $update_ref->{ name } eq 'Updated first entry', "Update in $table1 ok" );
@@ -126,26 +149,60 @@ SKIP: {
             my $query_ref = $ddb->query_items( $table2 => { id => 1, range_id => { GT => 5 } } );
             ok( $query_ref && scalar( @$query_ref ) == 3, "Query for 3 items in $table2" );
             
-            # batch get multuiple
-            my $batch_ref = $ddb->batch_get_item( {
-                $table1 => [
-                    { id => 1 },
-                    { id => 10 }
-                ],
-                $table2 => [
-                    { id => 2, range_id => 1 },
-                    { id => 1, range_id => 2 },
-                ]
-            } );
-            #print Dumper( $batch_ref );
-            ok(
-                defined $batch_ref->{ $table1 } && scalar( @{ $batch_ref->{ $table1 } } ) == 2
-                && defined $batch_ref->{ $table2 } && scalar( @{ $batch_ref->{ $table2 } } ) == 2,
-                "Found 4 entries from $table1 and $table2 with batch get"
+            # batch_write test
+            $ddb->batch_write_item({
+                $table1 => {
+                  put => [ { id => 11, name => "11entry" } ],
+                },
+                $table3 => {
+                  put => [ { id => 2, data => $data } ],
+                },
+            });
+
+            # Get string back
+            my $batched_str_ref = $ddb->get_item( $table1 => { id => 11 } );
+            ok( $batched_str_ref && $batched_str_ref->{ name } eq '11entry',
+                'Returned string data from batch write matches'
             );
-            
+
+
+            # Get binary back
+            my $batched_bin_ref = $ddb->get_item( $table3 => { id => 2 } );
+            ok( $batched_bin_ref && $batched_bin_ref->{ data } eq $data,
+                'Returned binary data from batch write matches'
+            );
+
+            # Test batch get with derive_table on and off
+            for my $derive_table ( 0, 1 ) {
+                $ddb->derive_table($derive_table);
+                # batch get multiple
+                my $batch_ref = $ddb->batch_get_item( {
+                    $table1 => [
+                        { id => 1 },
+                        { id => 10 }
+                    ],
+                    $table2 => [
+                        { id => 2, range_id => 1 },
+                        { id => 1, range_id => 2 },
+                    ],
+                    $table3 => [
+                        { id => 2 },
+                    ],
+                } );
+
+                #print Dumper( $batch_ref );
+                ok(
+                    defined $batch_ref->{ $table1 } && scalar( @{ $batch_ref->{ $table1 } } ) == 2
+                    && defined $batch_ref->{ $table2 } && scalar( @{ $batch_ref->{ $table2 } } ) == 2
+                    && defined $batch_ref->{ $table3 } && scalar( @{ $batch_ref->{ $table3 } } ) == 1,
+                    "Found 5 entries from $table1, $table2 and $table3 with batch get (derive_table = $derive_table)"
+                );
+
+                ok( $batch_ref->{ $table3 }->[0]->{data} eq $data, "Binary data returned from batch_get matches (derive_table = $derive_table)");
+            }
+
             # clean up
-            foreach my $table( $table1, $table2 ) {
+            foreach my $table( $table1, $table2, $table3 ) {
                 ok( $ddb->delete_table( $table ), "Table $table delete initialized" );
                 
                 foreach my $num( 1..60 ) {
