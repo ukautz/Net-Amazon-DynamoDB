@@ -21,6 +21,7 @@ WriteMakefile(
         'DateTime::Format::Strptime' => 0,
         'DateTime::TimeZone' => 0,
         'DateTime::TimeZone::Local' => 0,
+        'HTTP::Date' => 0,
         'Digest::SHA' => 0,
         'HTTP::Request' => 0,
         'JSON' => 0,
