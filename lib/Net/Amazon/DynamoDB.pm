@@ -8,7 +8,8 @@ Net::Amazon::DynamoDB - Simple interface for Amazon DynamoDB
 
 Simple to use interface for Amazon DynamoDB
 
-If you want an ORM-like interface with real objects to work with, this is implementation is not for you. If you just want to access DynamoDB in a simple/quick manner - you are welcome.
+If you want an ORM-like interface with real objects to work with, this is implementation 
+is not for you. If you just want to access DynamoDB in a simple/quick manner - you are welcome.
 
 See L<https://github.com/ukautz/Net-Amazon-DynamoDB> for latest release.
 
@@ -43,7 +44,7 @@ See L<https://github.com/ukautz/Net-Amazon-DynamoDB> for latest release.
         }
     );
 
-    # create both tables with 10 read and 5 write unites
+    # create both tables with 10 read and 5 write units
     $ddb->exists_table( $_ ) || $ddb->create_table( $_, 10, 5 )
         for qw/ sometable othertable /;
 
@@ -53,7 +54,7 @@ See L<https://github.com/ukautz/Net-Amazon-DynamoDB> for latest release.
         name       => 'bla',
         binary_data => $some_data
     } ) or die $ddb->error;
-    $ddb->put_item( sometable => {
+    $ddb->put_item( othertable => {
         id        => 5,
         range_id  => 7,
         attrib1   => 'It is now '. localtime(),
