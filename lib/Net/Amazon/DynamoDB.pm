@@ -172,7 +172,8 @@ has json => ( isa => 'JSON', is => 'rw', default => sub { JSON->new()->canonical
 
 =head2 host
 
-DynamoDB API Hostname
+DynamoDB API Hostname. Your table will be in this region only. Table names do not
+have to be unique across regions.
 
 Default: dynamodb.us-east-1.amazonaws.com
 
