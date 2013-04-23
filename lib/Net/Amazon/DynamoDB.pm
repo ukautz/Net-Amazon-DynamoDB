@@ -23,8 +23,9 @@ See L<https://github.com/ukautz/Net-Amazon-DynamoDB> for latest release.
             sometable => {
                 hash_key   => 'id',
                 attributes => {
-                    id   => 'N',
-                    name => 'S'
+                    id          => 'N',
+                    name        => 'S',
+                    binary_data => 'B'
                 }
             },
 
@@ -48,8 +49,9 @@ See L<https://github.com/ukautz/Net-Amazon-DynamoDB> for latest release.
 
     # insert something into tables
     $ddb->put_item( sometable => {
-        id   => 5,
-        name => 'bla'
+        id         => 5,
+        name       => 'bla',
+        binary_data => $some_data
     } ) or die $ddb->error;
     $ddb->put_item( sometable => {
         id        => 5,
@@ -78,6 +80,7 @@ use LWP::ConnCache;
 use Net::Amazon::AWSSign;
 use Time::HiRes qw/ usleep /;
 use XML::Simple qw/ XMLin /;
+use MIME::Base64;
 use Encode;
 
 =head1 CLASS ATTRIBUTES
@@ -116,8 +119,8 @@ has tables => ( isa => 'HashRef[HashRef]', is => 'rw', required => 1, trigger =>
         # check attributes
         while( my( $attr_name, $attr_type ) = each %{ $table_ref->{ attributes } } ) {
             croak "Wrong data type for attribute '$attr_name' in table '$table': Got '$attr_type' was"
-                . " expecting 'S' or 'N' or 'SS' or 'NS'"
-                unless $attr_type =~ /^[NS]S?$/;
+                . " expecting 'S', 'N', 'B', 'SS', 'NS', or 'BS'"
+                unless $attr_type =~ /^[BNS]S?$/;
         }
     }
 
@@ -711,14 +714,7 @@ sub put_item {
     # build the item
     foreach my $key( keys %$item_ref ){
         my $type = $self->_attrib_type( $table, $key );
-        my $value;
-        if ( $type eq 'SS' || $type eq 'NS' ) {
-            my @values = map { $_. '' } ( ref( $item_ref->{ $key } ) ? @{ $item_ref->{ $key } } : () );
-            $value = \@values;
-        }
-        else {
-            $value = $item_ref->{ $key } .'';
-        }
+        my $value = $self->_build_value($item_ref->{ $key },$type);
         $put{ Item }->{ $key } = { $type => $value };
     }
 
@@ -862,14 +858,7 @@ sub batch_write_item {
                     # build the item
                     foreach my $key( keys %$put_ref ){
                         my $type = $self->_attrib_type( $table, $key );
-                        my $value;
-                        if ( $type eq 'SS' || $type eq 'NS' ) {
-                            my @values = map { $_. '' } ( ref( $put_ref->{ $key } ) ? @{ $put_ref->{ $key } } : () );
-                            $value = \@values;
-                        }
-                        else {
-                            $value = $put_ref->{ $key } .'';
-                        }
+                        my $value = $self->_build_value($put_ref->{ $key },$type);
                         $request_ref->{ $key } = { $type => $value };
                     }
 
@@ -1092,20 +1081,21 @@ sub update_item {
         }
 
         # replace for scalar
-        elsif ( $type eq 'N' || $type eq 'S' ) {
+        elsif ( $type eq 'N' || $type eq 'S' || $type eq 'B' ) {
             $update{ AttributeUpdates }->{ $key } = {
-                Value  => { $type => $value. '' },
+                Value  => { $type => $self->_build_value($value,$type) },
                 Action => 'PUT'
             };
         }
 
         # replace or add for array types
-        elsif ( $type =~ /^[NS]S$/ ) {
+        elsif ( $type =~ /^([NSB])S$/ ) {
+            my $base_type = $1;
 
             # add \[ qw/ value1 value2 / ]
             if ( ref( $value ) eq 'REF' ) {
                 $update{ AttributeUpdates }->{ $key } = {
-                    Value  => { $type => [ map { "$_" } @$$value ] },
+                    Value  => { $type => [ map { $self->_build_value($_,$base_type) } @$$value ] },
                     Action => 'ADD'
                 };
             }
@@ -1113,7 +1103,7 @@ sub update_item {
             # replace [ qw/ value1 value2 / ]
             else {
                 $update{ AttributeUpdates }->{ $key } = {
-                    Value  => { $type => [ map { "$_" } @$value ] },
+                    Value  => { $type => [ map { $self->_build_value($_,$base_type) } @$value ] },
                     Action => 'PUT'
                 };
             }
@@ -1474,12 +1464,7 @@ sub batch_get_item {
             my $items_ref = $json_ref->{ Responses }->{ $table };
             $res{ $table_out } = [];
             foreach my $item_ref( @{ $items_ref->{ Items } } ) {
-                my %res_item;
-                foreach my $attrib( keys %$item_ref ) {
-                    my $type = $self->_attrib_type( $table, $attrib );
-                    $res_item{ $attrib } = $item_ref->{ $attrib }->{ $type };
-                }
-                push @{ $res{ $table_out } }, \%res_item;
+                push @{ $res{ $table_out } }, $self->_format_item($table,$item_ref);
             }
         }
         return \%res;
@@ -2174,7 +2159,27 @@ sub error {
     return ;
 }
 
+#
+# _build_value
+#   Creates the value for inclusion in JSON going to Dynamo
+sub _build_value {
+  my ( $self, $value, $type ) = @_;
 
+    # Deal with sets of other types
+    if ( $type =~ /^(.)S$/ ) {
+        my @values = map { $self->_build_value($_,$1) }
+                     ( ref( $value  ) ? @{ $value } : () );
+        return \@values;
+    }
+    # Binary Types: Base 64 Encode
+    elsif ( $type eq 'B' ) {
+        return encode_base64($value,'') . '';
+    }
+    # Numeric and String: Force to string
+    else {
+        return $value . '';
+    }
+}
 
 #
 # _init_security_token
@@ -2347,7 +2352,7 @@ sub _build_attrib_filter {
 
 #
 # _attrib_type $table, $key
-#   Returns type ("S", "N", "NS", "SS") of existing attribute in table
+#   Returns type ("S", "N", "B", "NS", "SS", "BS") of existing attribute in table
 #
 
 sub _attrib_type {
@@ -2394,22 +2399,51 @@ sub _format_item {
             my $key_name = $table_ref->{ "${key}_key" };
             my $key_type = $table_ref->{ attributes }->{ $key_name };
             $formatted{ $key_name } = $from_ref->{ ucfirst( $key ). 'KeyElement' }->{ $key_type };
+
+            if ( $key_type eq 'B' ) {
+                $formatted{ $key_name } = decode_base64( $formatted{ $key_name } );
+            }
+            elsif ( $key_name = 'BS' ) {
+                $formatted{ $key_name } = [ map { decode_base64($_) } @{ $formatted{ $key_name } } ];
+            }
         }
     }
     else {
         if ( $self->derive_table() ) {
             while ( my ( $key, $value ) = each %$from_ref ) {
-	            $formatted{$key} = ( $value->{'S'} || $value->{'N'} || $value->{'NS'} || $value->{'SS'} );
-	        }
+                if ( exists($value->{B}) ) {
+                    $formatted{$key} = decode_base64($value->{B});
+                }
+                elsif ( exists($value->{BS}) ) {
+                    $formatted{$key} = [ map { decode_base64($_) } @{ $value->{BS} } ];
+                }
+                else {
+                    $formatted{$key} = ( $value->{'S'} || $value->{'N'} || $value->{'NS'} || $value->{'SS'} );
+                }
+            }
         }
         else {
             while( my( $attrib, $type ) = each %{ $table_ref->{ attributes } } ) {
                 next unless defined $from_ref->{ $attrib };
-                $formatted{ $attrib } = $from_ref->{ $attrib }->{ $type };
+                if ( $type eq 'BS' ) {
+                    $formatted{ $attrib } = $self->_decode_binary_set( $from_ref->{ $attrib }->{ $type } );
+                }
+                elsif ( $type eq 'B' ) {
+                    $formatted{ $attrib } = decode_base64( $from_ref->{ $attrib }->{ $type } );
+                }
+                else {
+                    $formatted{ $attrib } = $from_ref->{ $attrib }->{ $type };
+                }
             }
         }
     }
     return \%formatted;
+}
+
+sub _decode_binary_set {
+    my ( $self, $bs_ref ) = shift;
+
+    return [ map { decode_base64($_) } @$bs_ref ];
 }
 
 

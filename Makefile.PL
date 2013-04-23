@@ -31,6 +31,7 @@ WriteMakefile(
         'Net::Amazon::AWSSign' => 0,
         'Time::HiRes' => 0,
         'XML::Simple' => 0,
+        'MIME::Base64' => 0,
     },
     test => {TESTS => 't/*.t t/*/*.t'}
 );
