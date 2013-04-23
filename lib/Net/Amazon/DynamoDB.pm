@@ -1611,14 +1611,14 @@ sub delete_item {
 Search in a table with hash AND range key.
 
     my ( $count, $items_ref, $next_start_keys_ref )
-        = $ddb->qyery_items( some_table => { id => 123, my_range_id => { GT => 5 } } );
+        = $ddb->query_items( some_table => { id => 123, my_range_id => { GT => 5 } } );
     print "Found $count items, where last id is ". $items_ref->[-1]->{ id }. "\n";
 
     # iterate through al all "pages"
     my $next_start_keys_ref;
     do {
         ( my $count, my $items_ref, $next_start_keys_ref )
-            = $ddb->qyery_items( some_table => { id => 123, my_range_id => { GT => 5 } }, {
+            = $ddb->query_items( some_table => { id => 123, my_range_id => { GT => 5 } }, {
                 start_key => $next_start_keys_ref
             } );
     } while( $next_start_keys_ref );
@@ -1653,7 +1653,7 @@ Eg
     { $range_key_name => { CONTAINS => "Bla" } }
     { $range_key_name => { IN => [ 1, 2, 5, 7 ] } }
 
-See L<http://docs.amazonwebservices.com/amazondynamodb/latest/developerguide/API_Query.html>
+See L<http://docs.aws.amazon.com/amazondynamodb/latest/APIReference/API_Query.html>
 
 =back
 
@@ -1891,7 +1891,7 @@ Performs scan on table. The result is B<eventually consistent>. Non hash or rang
 
 See query_items for argument description.
 
-Main difference to query_items: A whole table scan is performed, which is much slower. Also the amount of data scanned is limited in size; see L<http://docs.amazonwebservices.com/amazondynamodb/latest/developerguide/API_Scan.html>
+Main difference to query_items: A whole table scan is performed, which is much slower. Also the amount of data scanned is limited in size; see L<http://docs.aws.amazon.com/amazondynamodb/latest/APIReference/API_Scan.html>
 
 =cut
 
@@ -2037,6 +2037,10 @@ sub scan_items {
         }
 
         return wantarray ? ( $count, \@res, $next_start_key_ref ) : \@res;
+    }
+
+    if ( $args_ref->{ count } ) { # do not have $json_ref->{ Items }
+        return $json_ref if $res_ok;
     }
 
     # error
