@@ -1434,7 +1434,7 @@ sub batch_get_item {
                 $cache_key{$table}{$key_ref->{$hash_key}} = $cache_key;
                 my $cached = $self->cache->thaw( $cache_key );
                 if (defined $cached) {
-                    $cache_res{ $table_out } = [];
+                    $cache_res{ $table_out } ||= [];
                     push @{ $cache_res{ $table_out } }, $cached;
                     next;
                 }
