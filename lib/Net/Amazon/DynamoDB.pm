@@ -2125,7 +2125,7 @@ sub request {
         $response = $self->lwp->request( $request );
 
         # pull out the RequestID header
-		$self->request_id( $response->header( 'x-amzn-RequestId' ) );
+        $self->request_id( $response->header( 'x-amzn-RequestId' ) );
 
         $ENV{ DYNAMO_DB_DEBUG } && warn Dumper( $response );
         $ENV{ DYNAMO_DB_DEBUG_KEEPALIVE } && warn "  LWP keepalives in use: ", scalar($self->_lwpcache()->get_connections()), "/", $self->_lwpcache()->total_capacity(), "\n";
