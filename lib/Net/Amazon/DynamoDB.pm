@@ -318,6 +318,15 @@ has cache_key_method => ( is => 'rw', default => sub { \&Digest::SHA::sha1_hex }
     }
 } );
 
+=head2 request_id
+
+The x-amzn-RequestId header returned by the service.  This is needed by 
+Amazon tech support for debugging service issues
+
+=cut
+
+has request_id => ( isa => 'Str', is => 'rw' );
+
 #
 # _aws_signer
 #   Contains C<Net::Amazon::AWSSign> instance.
@@ -2114,6 +2123,10 @@ sub request {
 
         # run request
         $response = $self->lwp->request( $request );
+
+        # pull out the RequestID header
+        $self->request_id( $response->header( 'x-amzn-RequestId' ) );
+
         $ENV{ DYNAMO_DB_DEBUG } && warn Dumper( $response );
         $ENV{ DYNAMO_DB_DEBUG_KEEPALIVE } && warn "  LWP keepalives in use: ", scalar($self->_lwpcache()->get_connections()), "/", $self->_lwpcache()->total_capacity(), "\n";
 
