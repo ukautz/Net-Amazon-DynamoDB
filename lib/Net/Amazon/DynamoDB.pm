@@ -73,6 +73,7 @@ use Data::Dumper;
 use DateTime::Format::HTTP;
 use DateTime::Format::Strptime;
 use DateTime;
+use HTTP::Date qw/ time2str /;
 use Digest::SHA qw/ sha1_hex sha256_hex sha384_hex sha256 hmac_sha256_base64 /;
 use HTTP::Request;
 use JSON;
@@ -2081,7 +2082,7 @@ sub request {
     $json = $self->json->encode( $json ) if ref $json;
 
     # get date
-    my $http_date = DateTime::Format::HTTP->format_datetime( DateTime->now );
+    my $http_date = time2str( time );
 
     # build signable content
     #$json is already utf8 encoded via json encode
