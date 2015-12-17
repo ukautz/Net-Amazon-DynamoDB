@@ -8,7 +8,7 @@ Net::Amazon::DynamoDB - Simple interface for Amazon DynamoDB
 
 Simple to use interface for Amazon DynamoDB
 
-If you want an ORM-like interface with real objects to work with, this is implementation 
+If you want an ORM-like interface with real objects to work with, this is implementation
 is not for you. If you just want to access DynamoDB in a simple/quick manner - you are welcome.
 
 See L<https://github.com/ukautz/Net-Amazon-DynamoDB> for latest release.
@@ -1383,14 +1383,19 @@ sub batch_get_item {
 
     # check definition
     my %table_map;
-    foreach my $table( keys %$tables_ref ) {
+    foreach my $table ( keys %$tables_ref ) {
         $table = $self->_table_name( $table );
         my $table_ref = $self->_check_table( "batch_get_item", $table );
         $table_map{ $table } = $table_ref;
     }
 
+    my $need_live_request = 0;
+    my $use_cache = $self->_cache_enabled( $args_ref );
+    my %cache_key;
+    my %cache_res; # if we do not need live request, we can return it redirectly.
+
     my %get = ( RequestItems => {} );
-    foreach my $table( keys %table_map ) {
+    foreach my $table ( keys %table_map ) {
         my $table_out = $self->_table_name( $table, 1 );
         my $t_ref = $tables_ref->{ $table_out };
 
@@ -1410,11 +1415,20 @@ sub batch_get_item {
         my $hash_key = $m_ref->{ hash_key };
         my $hash_key_type = $self->_attrib_type( $table, $hash_key );
 
+        my $can_cache = 1; # only can cache when there isn't 'AttributesToGet' and range_key to simply the case
+
         # get range key?
         my ( $range_key, $range_key_type );
         if ( defined $m_ref->{ range_key } ) {
             $range_key = $m_ref->{ range_key };
             $range_key_type = $self->_attrib_type( $table, $range_key );
+            $can_cache = 0;
+        }
+
+        # having attributes limitation?
+        if ( ref( $t_ref ) eq 'HASH' && defined $t_ref->{ attributes } ) {
+            $get{ RequestItems }->{ $table }->{ AttributesToGet } = $t_ref->{ attributes };
+            $can_cache = 0;
         }
 
         # build request items
@@ -1423,11 +1437,18 @@ sub batch_get_item {
                 HashKeyElement => { $hash_key_type => $key_ref->{ $hash_key }. '' },
                 ( defined $range_key ? ( RangeKeyElement => { $range_key_type => $key_ref->{ $range_key }. '' } ) : () )
             };
-        }
 
-        # having attributes limitation?
-        if ( ref( $t_ref ) eq 'HASH' && defined $t_ref->{ attributes } ) {
-            $get{ RequestItems }->{ $table }->{ AttributesToGet } = $t_ref->{ attributes };
+            if ($use_cache and $can_cache) {
+                my $cache_key = $self->_cache_key_single( $table, $key_ref );
+                $cache_key{$table}{$key_ref->{$hash_key}} = $cache_key;
+                my $cached = $self->cache->thaw( $cache_key );
+                if (defined $cached) {
+                    $cache_res{ $table_out } ||= [];
+                    push @{ $cache_res{ $table_out } }, $cached;
+                    next;
+                }
+            }
+            $need_live_request = 1;
         }
 
         # using consistent read?
@@ -1435,6 +1456,9 @@ sub batch_get_item {
             $get{ RequestItems }->{ $table }->{ ConsistentRead } = \1;
         }
     }
+
+    ## return directly if we do not need live request
+    return \%cache_res unless $need_live_request;
 
     # perform create
     my ( $res, $res_ok, $json_ref ) = $self->request( BatchGetItem => \%get, {
@@ -1469,13 +1493,18 @@ sub batch_get_item {
         }
 
         my %res;
-        foreach my $table_out( keys %$tables_ref ) {
+        foreach my $table_out ( keys %$tables_ref ) {
             my $table = $self->_table_name( $table_out );
             next unless defined $json_ref->{ Responses }->{ $table } && defined $json_ref->{ Responses }->{ $table }->{ Items };
             my $items_ref = $json_ref->{ Responses }->{ $table };
             $res{ $table_out } = [];
             foreach my $item_ref( @{ $items_ref->{ Items } } ) {
-                push @{ $res{ $table_out } }, $self->_format_item($table,$item_ref);
+                my $item = $self->_format_item($table, $item_ref);
+                if ($use_cache) {
+                    my $cache_key = $cache_key{$table}{ $item->{ $table_map{ $table }->{hash_key} } };
+                    $self->cache->freeze( $cache_key, $item ) if $cache_key;
+                }
+                push @{ $res{ $table_out } }, $item;
             }
         }
         return \%res;
