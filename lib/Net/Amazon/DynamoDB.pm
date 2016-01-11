@@ -355,6 +355,12 @@ has _credentials => ( isa => 'HashRef[Str]', is => 'rw', predicate => '_has_cred
 
 has _credentials_expire => ( isa => 'DateTime', is => 'rw' );
 
+has _local_timezone => (
+  is      => 'ro',
+  isa     => 'DateTime::TimeZone',
+  default => sub { DateTime::TimeZone->new(name => 'local') },
+);
+
 #
 # _error
 #   Contains credentials received by GetSession
@@ -2206,7 +2212,7 @@ sub _init_security_token {
 
     # wheter has valid credentials
     if ( $self->_has_credentials() ) {
-        my $dt = DateTime->now( time_zone => 'local' )->add( seconds => 5 );
+        my $dt = DateTime->now( time_zone => $self->_local_timezone )->add( seconds => 5 );
         return 1 if $dt < $self->_credentials_expire;
     }
 
@@ -2243,7 +2249,7 @@ sub _init_security_token {
                     time_zone => 'UTC'
                 );
                 my $expire = $pattern->parse_datetime( $cred_ref->{ Expiration } );
-                $expire->set_time_zone( 'local' );
+                $expire->set_time_zone( $self->_local_timezone );
                 $self->_credentials_expire( $expire );
 
                 # set credentials
